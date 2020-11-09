@@ -182,6 +182,7 @@ case "$ARCH" in
    i686) BASELIBS="$BASELIBS ld-linux.so.2 linux-gate.so.1"; ARCH="x86" ;;
    x86) BASELIBS="$BASELIBS ld-linux.so.2 linux-gate.so.1" ;;
    armv7l) BASELIBS="$BASELIBS ld-linux-armhf.so.3 linux-vdso.1"; ARCH="armv7";; 
+   aarch64) BASELIBS="$BASELIBS ld-linux-aarch64.so.1 linux-vdso.1"; ARCH="aarch64";;
    *) echo "$SCRIPT: Unrecognized architecture '$ARCH'. See --help." && exit 1 ;;
 esac
 

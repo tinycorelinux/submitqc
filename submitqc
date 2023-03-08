@@ -61,6 +61,7 @@
 #<<  20160316 - add armv7l to ARCH testing, fix ARCH assignment bug (kudos andyj); 
 #<<     change release text to 'unstable', request feedback on ARM; begin 
 #<<     selfpackage() for cross-repo submission/updates; dentonlt
+#<<  20230307 - always rebuild the squashfs, ensuring correct ownerships and permissions; gnuser
 #<<
 #<<  STUFF TO DO
 #<<
@@ -182,13 +183,11 @@ case "$ARCH" in
    i686) BASELIBS="$BASELIBS ld-linux.so.2 linux-gate.so.1"; ARCH="x86" ;;
    x86) BASELIBS="$BASELIBS ld-linux.so.2 linux-gate.so.1" ;;
    armv7l) BASELIBS="$BASELIBS ld-linux-armhf.so.3 linux-vdso.1"; ARCH="armv7";; 
-   aarch64) BASELIBS="$BASELIBS ld-linux-aarch64.so.1 linux-vdso.1"; ARCH="aarch64";;
    *) echo "$SCRIPT: Unrecognized architecture '$ARCH'. See --help." && exit 1 ;;
 esac
 
 # other global variables
 REPO_URL="$(cat /opt/tcemirror)$TCVER/$ARCH/tcz"
-CHANGES= # when script makes changes to extension, remember to rebuild
 
 ####################
 ####################
@@ -378,7 +377,6 @@ selfpackage() {
 
 # load extensions
 loadextensions() {
-
   echo -n "${BLUE}$SCRIPT: loading required extensions ... ${NORMAL}" 
 
   # load dependencies
@@ -508,7 +506,6 @@ checkblock() {
 
   if ! unsquashfs -s "$F" | grep "Block size" | grep "4096" > /dev/null; then
     echo "${YELLOW}Not in 4096 block size. Extension will be rebuilt.${NORMAL}"
-    CHANGES=1
   else
     echo "${GREEN}Yes.${NORMAL}"
   fi
@@ -574,7 +571,6 @@ checkstartup() {
           SS="$(find $SSDIR -not -type d | tail -n 1)" 
           mv "${SS}" "${SSDIR}${BASENAME}"
           echo "${YELLOW}Done.${NORMAL}"
-          CHANGES=1 
         fi
         ;;
     *)  echo -e "${RED}Multiple startup files, none named $F. Repair manually.${NORMAL}"
@@ -611,7 +607,6 @@ checkstartup() {
 
   if [ $DIRERROR ]; then 
     echo "$F" >> /tmp/submitqc/wrongstartscriptperms
-    CHANGES=1
     echo
   else
     echo "${GREEN}Ok.${NORMAL}" 
@@ -779,15 +774,12 @@ checkfileperms() {
       fi
 
       echo "${F}: These errors were corrected." >> $LOG 
-      touch /tmp/submitqc/changes # rebuild tcz
       echo -e "${GREEN}Ok.${NORMAL}"
     fi 
     echo "" >> $LOG 
   else 
     echo -e "${GREEN}Ok.${NORMAL}"
   fi
-
-  [ -e /tmp/submitqc/changes ] && CHANGES=1 && rm /tmp/submitqc/changes
 
 }
 
@@ -817,7 +809,6 @@ checkstripping() {
       # log the fixes
       echo "Some unstripped binaries were stripped:" >> /tmp/submitqc/stripping
       echo "$BIN" >> /tmp/submitqc/stripping	
-      CHANGES=1 # rebuild tcz
     else 
       echo -e "\t${YELLOW}This may be intentional. Else to strip, use --strip.${NORMAL}"
 
@@ -1410,17 +1401,18 @@ submit zsync availability (script patches?) to maintainer."
 # Re-squash SQUASHDIR, use new file to replace F 
 rebuild() {
   
-  echo -n "${BLUE}$SCRIPT: make squashfs with changes ... ${NORMAL}"
-
-  # original:
-  #if [ "$BADPERM" == "1" ]; then
-  #for I in `find "$F".123456789/ -type d`; do stat -c '%a' "$I" | grep 755 >/dev/null || \
-  #stat -c '%a' "$I" | grep 775 >/dev/null || stat -c '%a' "$I" | grep 2755 >/dev/null || \
-  #stat -c '%a' "$I" | grep 2775 >/dev/null || chmod 755 "$I" ; done
-  #fi
+  echo -n "${BLUE}$SCRIPT: rebuilding squashfs ... ${NORMAL}"
 
   # make new/fixed extension 
   sudo rm -f "$F".new # jic
+
+  # fix common ownership/permissions mistakes:
+  sudo chown -R root:root ${SQUASHDIR}
+  sudo chown -R root:staff ${SQUASHDIR}/usr/local/tce.installed 2>/dev/null
+  sudo chmod -R 775 ${SQUASHDIR}/usr/local/tce.installed 2>/dev/null
+  sudo chown tc:staff ${SQUASHDIR}
+  sudo chmod 755 ${SQUASHDIR}
+
   sudo mksquashfs ${SQUASHDIR} "$F".new -b 4096 -noappend > /dev/null # noappend suggested by robc
   [ $? != 0 ] && echo "${RED}$SCRIPT: there was an error in mksquashfs. Halting." && exit 1
   sudo chmod 664 ${F}.new
@@ -1517,8 +1509,6 @@ for F in $TCZLIST; do
 
   if [ $? = 0 ]; then 
     
-    CHANGES= # set to 1 when the script changes some details 
-
     checkblock # ensure F was made with mksquash -b 4096
    
     #####
@@ -1557,7 +1547,7 @@ for F in $TCZLIST; do
     # returned to rundir
     #####
  
-    [ "$CHANGES" ] && rebuild # commit changes to new tcz file
+    rebuild
 
     checkmd5sums
 
@@ -1611,4 +1601,3 @@ if [ "$LOGLIST" ] && [ "$(cat $LOGLIST)" ]; then
 else
   echo "${BLUE}${SCRIPT}: ${GREEN}All extensions passed! Ready for submission.${NORMAL}"
 fi
-

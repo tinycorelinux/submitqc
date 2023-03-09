@@ -61,7 +61,9 @@
 #<<  20160316 - add armv7l to ARCH testing, fix ARCH assignment bug (kudos andyj); 
 #<<     change release text to 'unstable', request feedback on ARM; begin 
 #<<     selfpackage() for cross-repo submission/updates; dentonlt
-#<<  20230307 - always rebuild the squashfs, ensuring correct ownerships and permissions; gnuser
+#<<  20201109 - add aarch64 by polikuo (juanito)
+#<<  20230308 - always rebuild the squashfs, ensuring correct ownerships and permissions; gnuser
+#<<  20230309 - fix startup script permissions only in checkstartup(); gnuser
 #<<
 #<<  STUFF TO DO
 #<<
@@ -378,6 +380,7 @@ selfpackage() {
 
 # load extensions
 loadextensions() {
+
   echo -n "${BLUE}$SCRIPT: loading required extensions ... ${NORMAL}" 
 
   # load dependencies
@@ -600,8 +603,8 @@ checkstartup() {
     DIRERROR=1
   fi
 
-  if [ ! "$(stat -c'%U %G' ${SSDIR}/$BASENAME)" = "tc staff" ]; then
-    sudo chown tc:staff "${SSDIR}/$BASENAME"
+  if [ ! "$(stat -c'%U %G' ${SSDIR}/$BASENAME)" = "root staff" ]; then
+    sudo chown root:staff "${SSDIR}/$BASENAME"
     echo -ne "\n\t${YELLOW}Startup script ownership was corrected.${NORMAL}" 
     DIRERROR=1
   fi
@@ -1409,8 +1412,6 @@ rebuild() {
 
   # fix common ownership/permissions mistakes:
   sudo chown -R root:root ${SQUASHDIR}
-  sudo chown -R root:staff ${SQUASHDIR}/usr/local/tce.installed 2>/dev/null
-  sudo chmod -R 775 ${SQUASHDIR}/usr/local/tce.installed 2>/dev/null
   sudo chown tc:staff ${SQUASHDIR}
   sudo chmod 755 ${SQUASHDIR}
 

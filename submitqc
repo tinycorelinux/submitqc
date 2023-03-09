@@ -63,7 +63,7 @@
 #<<     selfpackage() for cross-repo submission/updates; dentonlt
 #<<  20201109 - add aarch64 by polikuo (juanito)
 #<<  20230308 - always rebuild the squashfs, ensuring correct ownerships and permissions; gnuser
-#<<  20230309 - fix startup script permissions only in checkstartup(); gnuser
+#<<  20230309 - fix startup script permissions in one place only; gnuser
 #<<
 #<<  STUFF TO DO
 #<<
@@ -582,39 +582,6 @@ checkstartup() {
 		>> /tmp/submitqc/startupscript
         ;;
   esac
-
-  DIRERROR= 
- 
-  if [ ! "$(stat -c%a ${SSDIR})" = 775 ]; then 
-    sudo chmod 775 "usr/local/tce.installed"
-    echo -ne "\n\t${YELLOW}Startup directory permissions were corrected.${NORMAL}" 
-    DIRERROR=1
-  fi
-
-  if [ "$(stat -c'%U %G' ${SSDIR})" != "root staff" ]; then
-    sudo chown root:staff "${SSDIR}"
-    echo -ne "\n\t${YELLOW}Startup directory ownership was corrected.${NORMAL}" 
-    DIRERROR=1
-  fi
-  
-  if [ ! "$(stat -c%a ${SSDIR}/$BASENAME)" = 755 ]; then 
-    sudo chmod 755 "${SSDIR}/$BASENAME"
-    echo -ne "\n\t${YELLOW}Startup script permissions were corrected.${NORMAL}" 
-    DIRERROR=1
-  fi
-
-  if [ ! "$(stat -c'%U %G' ${SSDIR}/$BASENAME)" = "root staff" ]; then
-    sudo chown root:staff "${SSDIR}/$BASENAME"
-    echo -ne "\n\t${YELLOW}Startup script ownership was corrected.${NORMAL}" 
-    DIRERROR=1
-  fi
-
-  if [ $DIRERROR ]; then 
-    echo "$F" >> /tmp/submitqc/wrongstartscriptperms
-    echo
-  else
-    echo "${GREEN}Ok.${NORMAL}" 
-  fi
 
 } # end checkstartup()
 
@@ -1412,6 +1379,9 @@ rebuild() {
 
   # fix common ownership/permissions mistakes:
   sudo chown -R root:root ${SQUASHDIR}
+  sudo chown -R root:staff ${SQUASHDIR}/usr/local/tce.installed 2>/dev/null
+  sudo chmod 775 ${SQUASHDIR}/usr/local/tce.installed 2>/dev/null
+  sudo chmod 755 ${SQUASHDIR}/usr/local/tce.installed/* 2>/dev/null
   sudo chown tc:staff ${SQUASHDIR}
   sudo chmod 755 ${SQUASHDIR}
 

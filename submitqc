@@ -64,6 +64,7 @@
 #<<  20201109 - add aarch64 by polikuo (juanito)
 #<<  20230308 - always rebuild the squashfs, ensuring correct ownerships and permissions; gnuser
 #<<  20230309 - fix startup script permissions in one place only; gnuser
+#<<  20230310 - 775 permission on startup script (cosmetic only, to match wiki recommendation), fix version string; gnuser
 #<<
 #<<  STUFF TO DO
 #<<
@@ -87,7 +88,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20151017"
+VERSIONSTRING="20230310"
   [ "echo $VERSIONSTRING | grep "DATE"" ] && VERSIONSTRING="SOURCE RUN"
 
 # handle cmdline args
@@ -1380,8 +1381,7 @@ rebuild() {
   # fix common ownership/permissions mistakes:
   sudo chown -R root:root ${SQUASHDIR}
   sudo chown -R root:staff ${SQUASHDIR}/usr/local/tce.installed 2>/dev/null
-  sudo chmod 775 ${SQUASHDIR}/usr/local/tce.installed 2>/dev/null
-  sudo chmod 755 ${SQUASHDIR}/usr/local/tce.installed/* 2>/dev/null
+  sudo chmod -R 775 ${SQUASHDIR}/usr/local/tce.installed 2>/dev/null
   sudo chown tc:staff ${SQUASHDIR}
   sudo chmod 755 ${SQUASHDIR}
 

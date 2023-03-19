@@ -65,6 +65,7 @@
 #<<  20230308 - always rebuild the squashfs, ensuring correct ownerships and permissions; gnuser
 #<<  20230309 - fix startup script permissions in one place only; gnuser
 #<<  20230310 - 775 permission on startup script (cosmetic only, to match wiki recommendation), fix version string; gnuser
+#<<  20230318 - rebuild the squashfs only if necessary; gnuser
 #<<
 #<<  STUFF TO DO
 #<<
@@ -88,7 +89,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20230310"
+VERSIONSTRING="20230318"
   [ "echo $VERSIONSTRING | grep "DATE"" ] && VERSIONSTRING="SOURCE RUN"
 
 # handle cmdline args
@@ -192,6 +193,7 @@ esac
 
 # other global variables
 REPO_URL="$(cat /opt/tcemirror)$TCVER/$ARCH/tcz"
+CHANGES= # when script makes changes to extension, remember to rebuild
 
 ####################
 ####################
@@ -511,6 +513,7 @@ checkblock() {
 
   if ! unsquashfs -s "$F" | grep "Block size" | grep "4096" > /dev/null; then
     echo "${YELLOW}Not in 4096 block size. Extension will be rebuilt.${NORMAL}"
+    CHANGES=1
   else
     echo "${GREEN}Yes.${NORMAL}"
   fi
@@ -576,6 +579,7 @@ checkstartup() {
           SS="$(find $SSDIR -not -type d | tail -n 1)" 
           mv "${SS}" "${SSDIR}${BASENAME}"
           echo "${YELLOW}Done.${NORMAL}"
+          CHANGES=1 
         fi
         ;;
     *)  echo -e "${RED}Multiple startup files, none named $F. Repair manually.${NORMAL}"
@@ -583,7 +587,6 @@ checkstartup() {
 		>> /tmp/submitqc/startupscript
         ;;
   esac
-
 } # end checkstartup()
 
 # look for COPYING or other text file at usr/local/share/doc/$BASENAME
@@ -746,12 +749,15 @@ checkfileperms() {
       fi
 
       echo "${F}: These errors were corrected." >> $LOG 
+      touch /tmp/submitqc/changes # rebuild tcz
       echo -e "${GREEN}Ok.${NORMAL}"
     fi 
     echo "" >> $LOG 
   else 
     echo -e "${GREEN}Ok.${NORMAL}"
   fi
+
+  [ -e /tmp/submitqc/changes ] && CHANGES=1 && rm /tmp/submitqc/changes
 
 }
 
@@ -781,6 +787,7 @@ checkstripping() {
       # log the fixes
       echo "Some unstripped binaries were stripped:" >> /tmp/submitqc/stripping
       echo "$BIN" >> /tmp/submitqc/stripping	
+      CHANGES=1 # rebuild tcz
     else 
       echo -e "\t${YELLOW}This may be intentional. Else to strip, use --strip.${NORMAL}"
 
@@ -1370,10 +1377,64 @@ submit zsync availability (script patches?) to maintainer."
 
 }
 
+# check that ownership and permissions follow basic wiki recommendations
+# there is no recommendation specifically for squashfs's root dir; juanito's extensions have tc:staff 755 so we'll go with that
+checkbasicfileperms() {
+  echo -n "${BLUE}$SCRIPT: $F file and directory ownership/permissions follow wiki recommendations? ${NORMAL}"
+
+  # squashfs root dir
+  root_dir_perms="$(unsquashfs -lls "$RUNDIR/$F" | grep 'squashfs-root$' | awk '{ print $1 }')"
+  if [ "$root_dir_perms" != "drwxr-xr-x" ]; then
+    echo -e "\n\t${YELLOW}squashfs root dir permissions not 755. Will rebuild squashfs to fix.${NORMAL}"
+    echo "$F" > /tmp/submitqc/basicfileperms
+    CHANGES=1
+    return
+  fi
+
+  root_dir_owner="$(unsquashfs -lls "$RUNDIR/$F" | grep 'squashfs-root$' | awk '{ print $2 }')"
+  if [ "$root_dir_owner" != "tc/staff" ]; then
+    echo -e "\n\t${YELLOW}squashfs root dir ownership not tc:staff. Will rebuild squashfs to fix.${NORMAL}"
+    echo "$F" > /tmp/submitqc/basicfileperms
+    CHANGES=1
+    return
+  fi
+
+  # startup dir/script
+  if unsquashfs -lls "$RUNDIR/$F" | grep -q '/usr/local/tce.installed'; then
+    n_wrong_perms="$(unsquashfs -lls "$RUNDIR/$F" | grep '/usr/local/tce.installed' | awk '{print $1}' | grep -v 'rwxrwxr-x' | wc -l)"
+    if [ "$n_wrong_perms" -gt 0 ]; then
+      echo -e "\n\t${YELLOW}Startup script/dir does not have 775 permissions. Will rebuild squashfs to fix.${NORMAL}"
+      echo "$F" > /tmp/submitqc/basicfileperms
+      CHANGES=1
+      return
+    fi
+    n_wrong_owner="$(unsquashfs -lls "$RUNDIR/$F" | grep '/usr/local/tce.installed' | awk '{print $2}' | grep -v 'root/staff' | wc -l)"
+    if [ "$n_wrong_owner" -gt 0 ]; then
+      echo -e "\n\t${YELLOW}Startup script/dir not owned by root:staff. Will rebuild squashfs to fix.${NORMAL}"
+      echo "$F" > /tmp/submitqc/basicfileperms
+      CHANGES=1
+      return
+    fi
+  fi
+
+  # other dirs and files
+  n_wrong_owner="$(unsquashfs -lls "$RUNDIR/$F" | grep '/' | grep -v 'squashfs-root$' | grep -v '/usr/local/tce.installed' | awk '{print 
+$2}' | grep -v 'root/root' | wc -l)"
+  if [ "$n_wrong_owner" -gt 0 ]; then
+    echo -e "\n\t${YELLOW}A non-root, non-startup file/directory is not owned by root:root. Will rebuild squashfs to fix.${NORMAL}"
+    echo "$F" > /tmp/submitqc/basicfileperms
+    CHANGES=1
+    return
+  fi
+
+  # we're still here, so all checks passed
+  echo "${GREEN}Ok.${NORMAL}"
+}
+
 # Re-squash SQUASHDIR, use new file to replace F 
 rebuild() {
   
-  echo -n "${BLUE}$SCRIPT: rebuilding squashfs ... ${NORMAL}"
+  echo -n "${BLUE}$SCRIPT: make squashfs with changes ... ${NORMAL}"
 
   # make new/fixed extension 
   sudo rm -f "$F".new # jic
@@ -1481,6 +1542,8 @@ for F in $TCZLIST; do
 
   if [ $? = 0 ]; then 
     
+    CHANGES= # set to 1 when the script changes some details 
+
     checkblock # ensure F was made with mksquash -b 4096
    
     #####
@@ -1507,7 +1570,8 @@ for F in $TCZLIST; do
  
       checkstartup # check/fix tce.installed (775, root:staff, one script of same name as ext)
       checkcopyright # look for COPYING or other doc at usr/local/share/doc/$F
-      checkfileperms # check/fix directory & file permissions. Fix on --fix.
+      checkbasicfileperms # basic dir & file ownerhip/permissions checks, rebuild if problem is found
+      checkfileperms # more directory & file permissions. Fix on --fix.
       checkstripping # ensure binaries/libraries have been stripped. Strip on --strip.
       checklist # check list file against squashfs and repo
 
@@ -1519,7 +1583,7 @@ for F in $TCZLIST; do
     # returned to rundir
     #####
  
-    rebuild
+    [ "$CHANGES" ] && rebuild # commit changes to new tcz file
 
     checkmd5sums
 

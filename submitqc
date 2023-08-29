@@ -71,6 +71,7 @@
 #<<     coding style, remove trailing white space, indention adjusted - no more tabs (polikuo)
 #<<  20230827 - Bug fix - tc:staff --> root:staff (polikuo)
 #<<  20230828 - tune architecture detection, enable zsync for armv7
+#<<  20230829 - refactor some functions to save time, only need to "find" once and store the details
 #<<
 #<<  STUFF TO DO
 #<<
@@ -94,7 +95,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20230827"
+VERSIONSTRING="20230829"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
 
@@ -220,6 +221,9 @@ esac
 # other global variables
 REPO_URL="$(cat /opt/tcemirror)$TCVER/$ARCH/tcz"
 CHANGES= # when script makes changes to extension, remember to rebuild
+FILE_INFO=$(mktemp) # a temporary file to hold output from the "file" command
+FILE_PERM=$(mktemp) # a temporary file to hold output from the "ls" command
+AWK_CACHE=$(mktemp) # a temporary file for "awk" to hold stuff
 
 ####################
 ####################
@@ -241,7 +245,7 @@ cleanonsignal() {
   echo "Ok."
 
   echo -en "\tCleaning up temp files ... "
-
+  rm -f $FILE_INFO $FILE_PERM
   [ "$TEMPLIST" ] && \
   for E in $TEMPLIST; do
     if [ -e /tmp/submitqc/$E ]; then
@@ -1499,6 +1503,43 @@ checktgz() {
 
 }
 
+prepareinfo() {
+  # added by polikuo
+  # the purpose is to store the info for an easier access
+  # because the "find" command takes up a lot of time to traverse
+  # and the output is reusable
+  # cleanup first
+  :> $AWK_CACHE
+  :> $FILE_PERM
+  :> $FILE_INFO
+  # process every 10 lines with awk
+  # so 'ls' & 'file' won't blow up if the list gets too long
+  # buff = ' A B C ....J', 10 objects with a space at the start
+  find . | awk -v cache="$AWK_CACHE" '{
+    if(/ /) {
+      print "Warning, filename: [" $0 "] contains empty space, skipped !" >> "/tmp/submitqc/filename-with-space"
+      system("file \"" $0 "\" >> /tmp/submitqc/filename-with-space")
+    } else {
+      buff = buff " " $0
+      if(NR%10 == 0) {
+        system("/bin/busybox ls -ld" buff " >> " cache)
+        buff = ""
+      }
+    }
+  } END {if(buff) system("/bin/busybox ls -ld" buff " >> " cache)}'
+  # we only need a few sections from the generated 'ls -l' information
+  # valid linux file types: '-', d, l, b, c, n, p, s
+  awk '/^[-dlbcnps]/{print $1, $3, $4, $NF}' $AWK_CACHE > $FILE_PERM
+  # store "file" info
+  awk -v cache="$FILE_INFO" '{
+    buff = buff " " $NF
+    if(NR%10 == 0) {
+      system("file" buff " >> " cache)
+      buff = ""
+    }
+  } END {if(buff) system("file" buff " >> " cache)}' $FILE_PERM
+} # end prepareinfo()
+
 ####################
 #########################
 # MAIN STUFF BEGINS
@@ -1576,6 +1617,7 @@ for F in $TCZLIST; do
         continue
       }
 
+      prepareinfo # store the output of "find" and "ls", only need to find once
       checkstartup # check/fix tce.installed (775, root:staff, one script of same name as ext)
       checkcopyright # look for COPYING or other doc at usr/local/share/doc/$F
       checkfileperms # check/fix directory & file permissions. Fix on --fix.

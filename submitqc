@@ -70,6 +70,7 @@
 #<<  20230826 - versioning, add logs for better tracking, VERSIONSTRING test adjusted;
 #<<     coding style, remove trailing white space, indention adjusted - no more tabs (polikuo)
 #<<  20230827 - Bug fix - tc:staff --> root:staff (polikuo)
+#<<  20230828 - tune architecture detection, enable zsync for armv7
 #<<
 #<<  STUFF TO DO
 #<<
@@ -189,9 +190,29 @@ BASELIBS="ANSI_X3.110.so ISO8859-1.so ISO8859-15.so ISO8859-2.so UNICODE.so ld-2
 
 case "$ARCH" in
   i686) BASELIBS="$BASELIBS ld-linux.so.2 linux-gate.so.1"; ARCH="x86" ;;
-  x86_64) BASELIBS="$BASELIBS ld-linux-x86-64.so.2 linux-vdso.so.1" ;;
+  x86_64)
+    if [ -f /lib/ld-linux-x86-64.so.2 ]; then
+      # x86_64
+      BASELIBS="$BASELIBS ld-linux-x86-64.so.2 linux-vdso.so.1"
+    else
+      # Core64
+      BASELIBS="$BASELIBS ld-linux.so.2 linux-gate.so.1"; ARCH="x86"
+    fi
+    ;;
   x86) BASELIBS="$BASELIBS ld-linux.so.2 linux-gate.so.1" ;;
-  armv7l) BASELIBS="$BASELIBS ld-linux-armhf.so.3 linux-vdso.1"; ARCH="armv7";;
+  armv6*) BASELIBS="$BASELIBS ld-linux-armhf.so.3 linux-vdso.1"; ARCH="armv6";;
+  armv7*)
+    BASELIBS="$BASELIBS ld-linux-armhf.so.3 linux-vdso.1"
+    # Use raspi cpu revision to detect board
+    # REV 1=BCM2836, 2=BCM2837, 3=BCM2711
+    REV=$(cat /proc/cpuinfo | awk '/Revision/ {print $3}')
+    REV=${REV:-6}
+    case ${REV:2:1} in
+      1|2) ARCH="armv7";;
+      3) ARCH="armv7l";;
+      *) echo "$SCRIPT: Unrecognized armv7 architecture. See --help." && exit 1 ;;
+    esac
+    ;;
   aarch64) BASELIBS="$BASELIBS ld-linux-aarch64.so.1 linux-vdso.1"; ARCH="aarch64";;
   *) echo "$SCRIPT: Unrecognized architecture '$ARCH'. See --help." && exit 1 ;;
 esac
@@ -264,10 +285,10 @@ selfpackage() {
     [ $? != 0 ] && echo "Need squashfs-tools-4.x!" && exit 1
   fi
 
-  if [ "${ARCH}" != "armv7" ]; then
+  # if [ "${ARCH}" != "armv7" ]; then
     tce-load -i zsync
     [ $? != 0 ] && echo "Need zsync!" && exit 1
-  fi
+  # fi
 
   # package this script for each repo ...
   mkdir -p /tmp/${SCRIPT}-pkg
@@ -348,12 +369,12 @@ selfpackage() {
     md5sum ${SCRIPT}.tcz > /tmp/${SCRIPT}/$CPU/$VER/${SCRIPT}.tcz.md5.txt
     cd -
 
-    if [ "$ARCH" != "armv7" ]; then
+    # if [ "$ARCH" != "armv7" ]; then
       # make zsync
       cd /tmp/${SCRIPT}/$CPU/$VER
       zsyncmake -u ${SCRIPT}.tcz ${SCRIPT}.tcz
       cd -
-    fi
+    # fi
 
     if [ "$APPEND" ] && [ ! "$APPEND" = " " ]; then
       # append updated change details to info file ...
@@ -399,7 +420,8 @@ loadextensions() {
   fi
 
   # not available on arm at 20160316
-  [ ! "$ARCH" = "armv7" ] && DEPLIST="$DEPLIST zsync binutils"
+  # totally fine now 20230828
+  # [ ! "$ARCH" = "armv7" ] && DEPLIST="$DEPLIST zsync binutils"
 
   for FILE in $DEPLIST; do
     if [ ! -e "/usr/local/tce.installed/$FILE" ]; then
@@ -1396,13 +1418,14 @@ makezsync() {
   LOG=/tmp/submitqc/zsync.$F
   rm -f $LOG
 
-  if [ "$ARCH" = "armv7" ]; then
-    echo "${YELLOW}$SCRIPT: skipping zsync creation - zsync support uncertain on armv7. Please \
-submit zsync availability (script patches?) to maintainer."
-    echo "$SCRIPT: $F.zsync not created; unknown whether armv7 has zsync support. Please report." \
-      > $LOG
-    return
-  fi
+# totally fine now 20230828
+#   if [ "$ARCH" = "armv7" ]; then
+#     echo "${YELLOW}$SCRIPT: skipping zsync creation - zsync support uncertain on armv7. Please \
+# submit zsync availability (script patches?) to maintainer."
+#     echo "$SCRIPT: $F.zsync not created; unknown whether armv7 has zsync support. Please report." \
+#       > $LOG
+#     return
+#   fi
 
   echo -n "${BLUE}$SCRIPT: $F creating new $F.zsync ${NORMAL}"
   rm -f ${F}.zsync

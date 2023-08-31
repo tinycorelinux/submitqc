@@ -69,16 +69,22 @@
 #<<  20230318 - rebuild squashfs only if necessary (gnuser)
 #<<  20230826 - versioning, add logs for better tracking, VERSIONSTRING test adjusted;
 #<<     coding style, remove trailing white space, indention adjusted - no more tabs (polikuo)
-#<<  20230827 - Bug fix - tc:staff --> root:staff (polikuo)
-#<<  20230828 - tune architecture detection, enable zsync for armv7
-#<<  20230829 - refactor some functions to save time, only need to "find" once and store the details
+#<<  20230827 - bugfix - tc:staff --> root:staff (polikuo)
+#<<  20230828 - tune architecture detection, enable zsync for armv7 (polikuo)
+#<<  20230831 - add function prepareinfo(), adjust everything accordingly. (polikuo)
+#<<     rewrite checkfileperms() for speed
+#<<     remove duplicate: checkbasicfileperms(), is a duplicate to checkfileperms()
+#<<     review check list - STUFF TO DO
+#<<        * Check that checkstartup applies changes BEFORE moving on to checkfileperms
+#<<           checked
+#<<        * if there is no startup file, but the current repository extension has one ... warn.
+#<<           checked
+#<<        * check for PPI compatibility [deprecated?]
+#<<           checked, it's deprecated
 #<<
 #<<  STUFF TO DO
 #<<
-#<<  * Check that checkstartup applies changes BEFORE moving on to checkfileperms
 #<<  * search dep file for extension families (ie: don't include both child & grandchild deps)
-#<<  * if there is no startup file, but the current repository extension has one ... warn.
-#<<  * check for PPI compatibility [deprecated?]
 #<<  * if usr/local/share/applications/ is included, expect $F.desktop and icon
 #<<  * if usr/local/share/pixmaps/ included, expect $F.png (icon file)
 #<<  * checktgz should check the content and structure of the tgz file (should this be xz?)
@@ -95,7 +101,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20230829"
+VERSIONSTRING="20230831"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
 
@@ -187,23 +193,13 @@ unset CHECKLIST
 TEMPLIST="$REQLOG $INCLOG $REPOLOG *.dep-mirror"
 
 # this is used during checklibs() to ignore dependency on system libs
-BASELIBS="ANSI_X3.110.so ISO8859-1.so ISO8859-15.so ISO8859-2.so UNICODE.so ld-2.20.so libanl-2.20.so libanl.so libanl.so.1 libblkid.so libblkid.so.1 libblkid.so.1.1.0 libc-2.20.so libc.so.6 libcom_err.so libcom_err.so.2 libcom_err.so.2.1 libcrypt-2.20.so libcrypt.so libcrypt.so.1 libdl-2.20.so libdl.so libdl.so.2 libe2p.so libe2p.so.2 libe2p.so.2.3 libext2fs.so libext2fs.so.2 libext2fs.so.2.4 libgcc_s.so libgcc_s.so.1 libm-2.20.so libm.so libm.so.6 libnsl-2.20.so libnsl.so libnsl.so.1 libnss_compat-2.20.so libnss_compat.so libnss_compat.so.2 libnss_dns-2.20.so libnss_dns.so libnss_dns.so.2 libnss_files-2.20.so libnss_files.so libnss_files.so.2 libpthread-2.20.so libpthread.so.0 libresolv-2.20.so libresolv.so libresolv.so.2 librt-2.20.so librt.so librt.so.1 libstdc++.so libstdc++.so.6 libstdc++.so.6.0.20 libsudo_noexec.so libsysfs.so libsysfs.so.2 libsysfs.so.2.0.1 libutil-2.20.so libutil.so libutil.so.1 libuuid.so libuuid.so.1 libuuid.so.1.3.0 libz.so libz.so.1 libz.so.1.2.8 sudo_noexec.so"
+BASELIBS='ANSI_X3.110.so ISO8859-15.so ISO8859-1.so ISO8859-2.so ld-2.20.so ld-linux-aarch64.so.1 ld-linux-armhf.so.3 ld-linux.so.2 ld-linux-x86-64.so.2 libanl-2.20.so libanl.so libanl.so.1 libblkid.so libblkid.so.1 libblkid.so.1.1.0 libc-2.20.so libcom_err.so libcom_err.so.2 libcom_err.so.2.1 libcrypt-2.20.so libcrypt.so libcrypt.so.1 libc.so.6 libdl-2.20.so libdl.so libdl.so.2 libe2p.so libe2p.so.2 libe2p.so.2.3 libext2fs.so libext2fs.so.2 libext2fs.so.2.4 libgcc_s.so libgcc_s.so.1 libm-2.20.so libm.so libm.so.6 libnsl-2.20.so libnsl.so libnsl.so.1 libnss_compat-2.20.so libnss_compat.so libnss_compat.so.2 libnss_dns-2.20.so libnss_dns.so libnss_dns.so.2 libnss_files-2.20.so libnss_files.so libnss_files.so.2 libpthread-2.20.so libpthread.so.0 libresolv-2.20.so libresolv.so libresolv.so.2 librt-2.20.so librt.so librt.so.1 libstdc++.so libstdc++.so.6 libstdc++.so.6.0.20 libsudo_noexec.so libsysfs.so libsysfs.so.2 libsysfs.so.2.0.1 libutil-2.20.so libutil.so libutil.so.1 libuuid.so libuuid.so.1 libuuid.so.1.3.0 libz.so libz.so.1 libz.so.1.2.8 linux-gate.so.1 linux-vdso.so.1 sudo_noexec.so UNICODE.so'
 
 case "$ARCH" in
-  i686) BASELIBS="$BASELIBS ld-linux.so.2 linux-gate.so.1"; ARCH="x86" ;;
-  x86_64)
-    if [ -f /lib/ld-linux-x86-64.so.2 ]; then
-      # x86_64
-      BASELIBS="$BASELIBS ld-linux-x86-64.so.2 linux-vdso.so.1"
-    else
-      # Core64
-      BASELIBS="$BASELIBS ld-linux.so.2 linux-gate.so.1"; ARCH="x86"
-    fi
-    ;;
-  x86) BASELIBS="$BASELIBS ld-linux.so.2 linux-gate.so.1" ;;
-  armv6*) BASELIBS="$BASELIBS ld-linux-armhf.so.3 linux-vdso.1"; ARCH="armv6";;
+  i686) ARCH="x86" ;;
+  x86_64) [ -f /lib/ld-linux-x86-64.so.2 ] || ARCH="x86" ;;
+  armv6*) ARCH="armv6";;
   armv7*)
-    BASELIBS="$BASELIBS ld-linux-armhf.so.3 linux-vdso.1"
     # Use raspi cpu revision to detect board
     # REV 1=BCM2836, 2=BCM2837, 3=BCM2711
     REV=$(cat /proc/cpuinfo | awk '/Revision/ {print $3}')
@@ -214,7 +210,7 @@ case "$ARCH" in
       *) echo "$SCRIPT: Unrecognized armv7 architecture. See --help." && exit 1 ;;
     esac
     ;;
-  aarch64) BASELIBS="$BASELIBS ld-linux-aarch64.so.1 linux-vdso.1"; ARCH="aarch64";;
+  aarch64) ARCH="aarch64";;
   *) echo "$SCRIPT: Unrecognized architecture '$ARCH'. See --help." && exit 1 ;;
 esac
 
@@ -588,15 +584,24 @@ checkstartup() {
 
   echo -n "${BLUE}${SCRIPT}: ${F} startup files ok? ${NORMAL}"
 
-  if [ ! -d usr/local/tce.installed/ ]; then
+  local DIRERROR SSDIR SS
+  if ! grep -q 'usr/local/tce.installed' $FILE_PERM; then
     echo "${GREEN}None present. Ok, I think.${NORMAL}"
     return # no startup script
   fi
 
   # count files in startup script dir; get name of startup script
   SSDIR="usr/local/tce.installed/"
-  SS="$(ls -A $SSDIR)"
-  COUNT="$(echo "$SS" | wc -l)"
+  # SS="$(ls -A $SSDIR)"
+  # COUNT="$(echo "$SS" | wc -l)"
+  COUNT=$(grep $SSDIR $FILE_PERM | wc -l)
+
+  # startup script is a file, not directory
+  if grep $SSDIR $FILE_PERM | grep -q '^d'; then
+    echo "${RED}${F}: directories found. Repair manually.${NORMAL}"
+    grep $SSDIR $FILE_PERM | grep '^d'
+    echo "${F}: directories found. Repair manually." >> /tmp/submitqc/startupscript
+  fi
 
   # is there only 1 startup file, named same as extension?
   case $COUNT in
@@ -604,11 +609,14 @@ checkstartup() {
         echo -e "${F}: startup folder without script. Repair manually." \
         >> /tmp/submitqc/startupscript
         ;;
-    1)  if [ "${SS}" != "${BASENAME}" ]; then
+    1)  SS=$(grep $SSDIR $FILE_PERM)
+        SS=${SS##*/}
+        if [ "${SS}" != "${BASENAME}" ]; then
           echo -ne "\n${YELLOW}script name ($SS) is incorrect. Renaming ${BASENAME}. ${NORMAL}"
           echo "$F startup named $SS renamed $BASENAME" >> /tmp/submitqc/wrongstartscriptname
-          SS="$(find $SSDIR -not -type d | tail -n 1)"
-          mv "${SS}" "${SSDIR}${BASENAME}"
+          # SS="$(find $SSDIR -not -type d | tail -n 1)"
+          # mv "${SS}" "${SSDIR}${BASENAME}"
+          mv "./usr/local/tce.installed/${SS}" "./usr/local/tce.installed/${BASENAME}"
           echo "${YELLOW}Done.${NORMAL}"
           CHANGES=1
         fi
@@ -677,10 +685,12 @@ checkcopyright() {
     echo -e "\t${YELLOW}Confirm that this is not needed.${NORMAL}"
 
     # courtesy: look for copyright info in tree (kudos coreplayer2 for this)
-    LICENSEFILES="license copying copyright"
-    for c in ${LICENSEFILES}; do
-      find . -type f -iname "${c}*" >> $COPYRIGHTFILES
-    done
+    # LICENSEFILES="license copying copyright"
+    # for c in ${LICENSEFILES}; do
+    #   find . -type f -iname "${c}*" >> $COPYRIGHTFILES
+    # done
+    # (polikuo) don't use "for loop"
+    grep -i 'license\|copying\|copyright' $FILE_INFO | cut -d ' ' -f 4 >> $COPYRIGHTFILES
 
     # remove any blank lines from COPYRIGHTFILES list
     sed -i '/^$/d' $COPYRIGHTFILES
@@ -726,6 +736,8 @@ checkcopyright() {
 
 # check permissions of all files/directories
 checkfileperms() {
+  # define the scope of these variables
+  local D_RR D_755 F_RR F_755 F_644 P_OUT
 
   echo -n "${BLUE}$SCRIPT: $F file/directory ownerships & permissions ok? ${NORMAL}"
 
@@ -736,89 +748,131 @@ checkfileperms() {
   # Find directories without root:root and/or 755. Skip tce.installed.
   # Test all files. root:root. executables 755, others 644. Skip tce.installed.
 
-  # begin rotdash section - these finds can take awhile.
-  (
-  D_RR="$(find -type d -not -user root | grep -v usr/local/tce.installed; \
-    find -type d -not -group root | grep -v usr/local/tce.installed)"
-  D_755="$(find -type d -not -perm 755 | grep -v usr/local/tce.installed)"
+  # D_RR, F_RR, D_755, F_755, F_644
+  awk '!/tce.installed/' $FILE_PERM > $AWK_CACHE
+  D_RR=$(awk '/^d/ && $2 $3 != "root" "root" {print $NF}' $AWK_CACHE)
+  F_RR=$(awk '/^[^d]/ && $2 $3 != "root" "root" {print $NF}' $AWK_CACHE)
+  D_755=$(awk '/^d/ && !/^drwxr-xr-x/ {print $NF}' $AWK_CACHE)
+  # The filenames may disrupt with the pattern matching if you simply use /executable/
+  # For instance, if a file is call "README-about-executable.txt"
+  # It would go into F_644, which is unwanted behavior
+  awk '/^[^d]/ && !/^-rwxr-xr-x/ && !/tce.installed/ {print $NF}' $FILE_PERM > $AWK_CACHE
+  F_755=$(awk -v FS=": " -v cache="$AWK_CACHE" 'BEGIN{while(getline buff < cache)P[buff]=1}
+  P[$1] && (/: .*executable/ || /: .*shared object/) {print $1}' $FILE_INFO)
+  awk '/^[^d]/ && !/^-rw-r--r--/ && !/tce.installed/ {print $NF}' $FILE_PERM > $AWK_CACHE
+  F_644=$(awk -v FS=": " -v cache="$AWK_CACHE" 'BEGIN{while(getline buff < cache)P[buff]=1}
+  P[$1] && !/: .*executable/ && !/: .*shared object/ && !/: .*symbolic link/ {print $1}' $FILE_INFO)
 
-  F_RR="$(find -type f -not -user root | grep -v usr/local/tce.installed; \
-    find -mindepth 1 -type f -not -group root \
-    | grep -v usr/local/tce.installed)"
-  F_755="$(find -type f -not -perm 755 -exec file {} \; | grep 'executable' \
-    | grep -v usr/local/tce.installed; \
-    find -type f -not -perm 755 -exec file {} \; | grep 'shared object')"
-  F_644="$(find -type f -not -perm 644 -exec file {} \; \
-    | grep -v 'executable' | grep -v 'shared object' | grep -v usr/local/tce.installed)"
-  ) &
-  rotdash $!
-
-  if [ "${F_RR}${D_RR}" ]; then
-    NOTRR="$(echo -e "${F_RR}\n${D_RR}" | sort | uniq)" # remove duplicates, sort
-    echo -e "\n\t${YELLOW}Expected root:root ownership:\n${NOTRR}${NORMAL}" | \
-    sed 's_^\./__' | sed '2!s_^_\t\t_'
-  fi
-  [ "$F_755" ] || [ "$D_755" ] && \
-    echo -e "\n\t${YELLOW}Expected 755:\n${F_755}\n${D_755}${NORMAL}" | \
-    sed 's_^\./__' | sed '2!s_^_\t\t_'
-  [ "$F_644" ] && \
-    echo -e "\n\t${YELLOW}Expected 644:\n${F_644}${NORMAL}" | \
-    sed 's_^\./__' | sed '2!s_^_\t\t_'
-
-  if [ "$F_RR$D_RR$F_755$D_755$F_644" ]; then # write warnings to log file
-      echo "${F}: Some directory or file permissions were incorrect or non-standard." >> $LOG
-      [ "$D_RR" ] && echo -e "Directories - Expected root:root:\n${D_RR}" >> $LOG
-      [ "$D_755" ] && echo -e "Directories - Expected 755:\n${D_755}" >> $LOG
-      [ "$F_RR" ] && echo -e "Files - Expected root:root:\n${F_RR}" >> $LOG
-      [ "$F_755" ] && echo -e "Files - Expected 755:\n${F_755}" >> $LOG
-      [ "$F_644" ] && echo -e "Files - Expected 644:\n${F_644}" >> $LOG
-    if [ ! $FIXFILES ]; then
-      echo -e "\t${RED}You have warnings. See /tmp/submitqc/fileperms.${NORMAL}"
-      echo -e "${RED}\tTo set defaults, run $SCRIPT with option --fix.${NORMAL}"
-      # log it:
-      echo -n "\nTo set defaults, run $SCRIPT with option --fix." >> $LOG
-    else
-
+  if [ "${D_RR}${F_RR}${D_755}${F_755}${F_644}" ]; then
+    # if anything
+    printf "\n\n"
+    # may contain current directory ".", remove "./" first
+    # output format should be "usr/local/bin/binary"
+    # root:root
+    if [ "${D_RR}${F_RR}" ]; then
+      P_OUT=$(echo "${D_RR}${F_RR}" | sort -u)
+      P_OUT=$(echo "$P_OUT" | sed -e '/^[[:blank:]]*$/d' -e 's_^\./__' -e 's_^_\t\t_')
+      echo -e "\t${YELLOW}Expected root:root ownership:\n${P_OUT}${NORMAL}\n"
+    fi
+    # 755
+    if [ "${F_755}${D_755}" ]; then
+      P_OUT=$(echo "${F_755}${D_755}" | sort -u)
+      P_OUT=$(echo "$P_OUT" | sed -e '/^[[:blank:]]*$/d' -e 's_^\./__' -e 's_^_\t\t_')
+      echo -e "\t${YELLOW}Expected 755 permission:\n${P_OUT}${NORMAL}\n"
+    fi
+    # 644
+    if [ "$F_644" ]; then
+      P_OUT=$(echo "$F_644" | sort -u | sed -e 's_^\./__' -e 's_^_\t\t_')
+      echo "\t${YELLOW}Expected 644 permission:\n${P_OUT}${NORMAL}\n"
+    fi
+    # logging
+    echo "${F}: Some directory or file permissions were incorrect or non-standard." >> $LOG
+    [ "$D_RR" ] && echo -e "Directories - Expected root:root:\n${D_RR}\n">> $LOG
+    [ "$D_755" ] && echo -e "Directories - Expected 755:\n${D_755}\n" >> $LOG
+    [ "$F_RR" ] && echo -e "Files - Expected root:root:\n${F_RR}\n">> $LOG
+    [ "$F_755" ] && echo -e "Files - Expected 755:\n${F_755}\n" >> $LOG
+    [ "$F_644" ] && echo -e "Files - Expected 644:\n${F_644}\n" >> $LOG
+    # Fixing
+    if [ "$FIXFILES" ]; then
       # fix permission/ownership errors
       echo -e "\t${YELLOW}fixing inconsistencies ... ${NORMAL}"
 
-      # first, chop off all the file descriptor content - we just need file/dir names
-      F_RR="$(echo "$F_RR" | cut -f1 -d:)"
-      D_RR="$(echo "$D_RR" | cut -f1 -d:)"
-      D_755="$(echo "$D_755" | cut -f1 -d:)"
-      F_755="$(echo "$F_755" | cut -f1 -d:)"
-      F_644="$(echo "$F_644" | cut -f1 -d:)"
-
-      # echo "Files for fixing: "
-      # echo -e "\n$F_RR\n\n$D_RR\n\n$D_755\n\n$F_755\n\n$F_644"
-
-      if [ -n "$D_RR$F_RR" ]; then
+      if [ "${D_RR}${F_RR}" ]; then
         echo -e "\t${YELLOW}chown root:root files and directories${NORMAL}"
-        sudo chown root:root $D_RR $F_RR
+        # sudo chown root:root $D_RR $F_RR
+        # use '-h' so it affects the links
+        # guard the command length with awk
+        echo "${D_RR}${F_RR}" | sudo awk 'BEGIN{E=0}{
+          if(length(buff " " $0) > 130000) {
+            e=system("chown -h root:root" buff)
+            E = E || e
+            buff = ""
+          }
+          buff = buff " " $0
+        } END {
+          if(buff) {
+            e=system("chown -h root:root" buff)
+            E = E || e
+          }
+          exit E
+        }'
         [ $? != 0 ] && echo -e "\n${RED}Error in chown - halting.${NORMAL}" && exit 1
       fi
 
-      if [ -n "$D_755$F_755" ]; then
+      if [ "${F_755}${D_755}" ]; then
         echo -e "\t${YELLOW}chmod 755 executable files and directories${NORMAL}"
-        MODETMP=/tmp/submitqc/mode-sample-$(date +%s | head -c4)
-        touch $MODETMP # using just chmod 755 doesn't adjust sticky bit
-        sudo chmod 755 $MODETMP
-        sudo chmod --reference=$MODETMP $D_755 $F_755
-        rm -f $MODETMP
+        # MODETMP=/tmp/submitqc/mode-sample-$(date +%s | head -c4)
+        # touch $MODETMP # using just chmod 755 doesn't adjust sticky bit
+        # sudo chmod 755 $MODETMP
+        # sudo chmod --reference=$MODETMP $D_755 $F_755
+        # rm -f $MODETMP
+        # just use 'chmod 0755'
+        echo "${F_755}${D_755}" | sudo awk 'BEGIN{E=0}{
+          if(length(buff " " $0) > 130000) {
+            e=system("chmod 0755" buff)
+            E = E || e
+            buff = ""
+          }
+          buff = buff " " $0
+        } END {
+          if(buff) {
+            e=system("chmod 0755" buff)
+            E = E || e
+          }
+          exit E
+        }'
         [ $? != 0 ] && echo -e "\n${RED}Error in chmod - halting.${NORMAL}" && exit 1
       fi
 
-      if [ -n "$F_644" ]; then
+      if [ "$F_644" ]; then
         echo -e "\t${YELLOW}chmod 644 normal files${NORMAL}"
-        sudo chmod 644 $F_644
+        # sudo chmod 644 $F_644
+        echo "$F_644" | sudo awk 'BEGIN{E=0}{
+          if(length(buff " " $0) > 130000) {
+            e=system("chmod 0644" buff)
+            E = E || e
+            buff = ""
+          }
+          buff = buff " " $0
+        } END {
+          if(buff) {
+            e=system("chmod 0644" buff)
+            E = E || e
+          }
+          exit E
+        }'
         [ $? != 0 ] && echo -e "\n${RED}Error in chmod - halting.${NORMAL}" && exit 1
       fi
 
       echo "${F}: These errors were corrected." >> $LOG
       touch /tmp/submitqc/changes # rebuild tcz
       echo -e "${GREEN}Ok.${NORMAL}"
+    else
+      echo -e "\t${RED}You have warnings. See /tmp/submitqc/fileperms.${NORMAL}"
+      echo -e "${RED}\tTo set defaults, run $SCRIPT with option --fix.${NORMAL}"
+      # log it:
+      echo "To set defaults, run $SCRIPT with option --fix." >> $LOG
     fi
-    echo "" >> $LOG
   else
     echo -e "${GREEN}Ok.${NORMAL}"
   fi
@@ -833,13 +887,16 @@ checkstripping() {
   echo -n "${BLUE}$SCRIPT: $F binaries have been stripped? ${NORMAL}"
 
   # get a list of all un-stripped binaries.
-  (
-    find -type f -exec file {} \; | grep 'not stripped' | cut -f1 -d: | sort | uniq \
-    > /tmp/submitqc/bin.list
-  ) &
-  rotdash $!
+  # unlikely, but filenames may contain colons ":"
+  BIN=$(grep 'not stripped' $FILE_INFO | sed 's_: .*__g')
 
-  BIN="$(cat /tmp/submitqc/bin.list)"
+  # (
+  #   find -type f -exec file {} \; | grep 'not stripped' | cut -f1 -d: | sort | uniq \
+  #   > /tmp/submitqc/bin.list
+  # ) &
+  # rotdash $!
+  # BIN="$(cat /tmp/submitqc/bin.list)"
+
 
   if [ "$BIN" ]; then
     echo -e "\n\t${YELLOW}Some binaries have not been stripped:${NORMAL}"
@@ -867,7 +924,7 @@ checkstripping() {
     echo "${GREEN}Ok.${NORMAL}"
   fi
 
-  rm /tmp/submitqc/bin.list
+  # rm /tmp/submitqc/bin.list
   unset BIN
 
 }
@@ -1019,7 +1076,8 @@ searchlocallibs() {
   echo -e "\t${BLUE}Searching local repo for missing libs ... ${NORMAL}"
 
   # list local repo, lib extensions first
-  REPOFILES="$(find $REPO -maxdepth 1 -name "lib*.tcz"; find $REPO -maxdepth 1 -name "*.tcz" | grep -v "/lib*.tcz")"
+  # unlike find, grep use regex
+  REPOFILES=$(find $REPO -maxdepth 1 -name "lib*.tcz"; find $REPO -maxdepth 1 -name "*.tcz" | grep -v '/lib.*.tcz')
 
   # try to find missing libs in repository
   for FILE in $REPOFILES; do
@@ -1100,7 +1158,7 @@ checklibs() {
   if [ ! "$LIBCHECK" ]; then
     echo "${YELLOW}$SCRIPT: ${F} to enable library inclusion tests, use --libs.${NORMAL}"
     echo -e "\t${YELLOW}Without lib tests, check is considered incomplete.${NORMAL}"
-    echo -n "$SCRIPT: ${F} library inclusion disabled on commandline." >> $LOG
+    echo "$SCRIPT: ${F} library inclusion disabled on commandline." >> $LOG
     return
   fi
 
@@ -1112,8 +1170,12 @@ checklibs() {
 
   # list req'd libs (to temp file)
   (
-  find -type f -exec file {} \; | grep 'shared libs' | cut -f1 -d: | xargs ldd | \
-    awk '{print $1}' | sed 's/.*\///' | sort | uniq > $REQLOG
+  # find -type f -exec file {} \; | grep 'shared libs' | cut -f1 -d: | xargs ldd | \
+    # awk '{print $1}' | sed 's/.*\///' | sort | uniq > $REQLOG
+  grep 'shared object' $FILE_INFO | sed 's_: .*__g' | xargs ldd | awk '{
+    c = split($1, a, "/")
+    libs[a[c]] = 1
+  } END {for (lib in libs) print lib}' > $REQLOG
   ) &
   rotdash $!
 
@@ -1512,31 +1574,33 @@ prepareinfo() {
   :> $AWK_CACHE
   :> $FILE_PERM
   :> $FILE_INFO
-  # process every 10 lines with awk
+  # guard the command length with awk
   # so 'ls' & 'file' won't blow up if the list gets too long
-  # buff = ' A B C ....J', 10 objects with a space at the start
-  find . | awk -v cache="$AWK_CACHE" '{
+  # buff = ' really long command', with a space at the start
+  find | awk -v cache="$AWK_CACHE" '{
     if(/ /) {
       print "Warning, filename: [" $0 "] contains empty space, skipped !" >> "/tmp/submitqc/filename-with-space"
       system("file \"" $0 "\" >> /tmp/submitqc/filename-with-space")
     } else {
-      buff = buff " " $0
-      if(NR%10 == 0) {
+      if(length(buff " " $0) > 130000) {
         system("/bin/busybox ls -ld" buff " >> " cache)
         buff = ""
       }
+      buff = buff " " $0
     }
   } END {if(buff) system("/bin/busybox ls -ld" buff " >> " cache)}'
   # we only need a few sections from the generated 'ls -l' information
   # valid linux file types: '-', d, l, b, c, n, p, s
-  awk '/^[-dlbcnps]/{print $1, $3, $4, $NF}' $AWK_CACHE > $FILE_PERM
+  awk '/^[-dbcnps]/{print $1, $3, $4, $NF}' $AWK_CACHE > $FILE_PERM
+  # only link files has extra column
+  awk '/^l/{print $1, $3, $4, $(NF-2)}' $AWK_CACHE >> $FILE_PERM
   # store "file" info
   awk -v cache="$FILE_INFO" '{
-    buff = buff " " $NF
-    if(NR%10 == 0) {
+    if(length(buff " " $0) > 130000) {
       system("file" buff " >> " cache)
       buff = ""
     }
+    buff = buff " " $NF
   } END {if(buff) system("file" buff " >> " cache)}' $FILE_PERM
 } # end prepareinfo()
 
@@ -1661,6 +1725,8 @@ for F in $TCZLIST; do
 
 done # end loop all extensions
 
+# remove temporary files
+rm -f $FILE_INFO $FILE_PERM $AWK_CACHE
 
 #############
 # REPORTING

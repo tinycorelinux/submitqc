@@ -61,6 +61,7 @@
 #<<  20160316 - add armv7l to ARCH testing, fix ARCH assignment bug (kudos andyj); 
 #<<     change release text to 'unstable', request feedback on ARM; begin 
 #<<     selfpackage() for cross-repo submission/updates; dentonlt
+#<<  20201109 - juanito: add aarch64 by polikuo 
 #<<
 #<<  STUFF TO DO
 #<<
@@ -84,7 +85,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20151017"
+VERSIONSTRING="20201109"
   [ "echo $VERSIONSTRING | grep "DATE"" ] && VERSIONSTRING="SOURCE RUN"
 
 # handle cmdline args

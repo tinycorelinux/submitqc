@@ -665,6 +665,73 @@ checkstartup() {
 
 # look for COPYING or other text file at usr/local/share/doc/$BASENAME
 checkcopyright() {
+
+  echo -n "${BLUE}$SCRIPT: $F includes copyright notice? ${NORMAL}"
+  E=${BASENAME##*-}
+
+  [ ${E} = "doc" ] || [ ${E} = "locale" ] || [ ${E} = "dev" ] && \
+    echo "${GREEN}Not needed for -${F##*-}. Done.${NORMAL}" && return
+
+  COPYRIGHTFILES="/tmp/submitqc/$F.copyrightfiles"
+
+  # look for copyright dir + files. If missing, no good.
+  if [ ! -e "usr/local/share/doc/$BASENAME" ] \
+    || [ "$(find usr/local/share/doc/$BASENAME -type f | wc -l)" = 0 ]; then
+    MISSING=1
+  fi
+
+  if [ "$MISSING" ]; then
+    echo -e "\n\t${YELLOW}Copyright notice not found at usr/local/share/doc/$BASENAME${NORMAL}"
+    echo -e "\t${YELLOW}Confirm that this is not needed.${NORMAL}"
+
+    # courtesy: look for copyright info in tree (kudos coreplayer2 for this)
+    # LICENSEFILES="license copying copyright"
+    # for c in ${LICENSEFILES}; do
+    #   find . -type f -iname "${c}*" >> $COPYRIGHTFILES
+    # done
+    # (polikuo) don't use "for loop"
+    grep -i 'license\|copying\|copyright' $FILE_INFO | cut -d ' ' -f 4 >> $COPYRIGHTFILES
+
+    # remove any blank lines from COPYRIGHTFILES list
+    sed -i '/^$/d' $COPYRIGHTFILES
+
+    if [ "$(cat $COPYRIGHTFILES | wc -l)" != 0 ]; then
+      echo -e "\n\t${YELLOW}Possible copyright files found:${NORMAL}"
+      echo -e "${YELLOW}$(cat $COPYRIGHTFILES | sed 's/^/\t\t/g')${NORMAL}"
+    else
+      rm $COPYRIGHTFILES
+    fi
+    unset FOUND
+
+    if [ $INET ]; then
+      # courtesy: check if it's in the repo copy ...
+      echo -e "\t${YELLOW}Checking repo for copyright statement in $F ...${NORMAL}"
+      REPOLIST="/tmp/submitqc/${F}.repolist"
+      wget -O ${REPOLIST} "$REPO_URL"/"$F".list > /dev/null 2>&1
+      if [ $? = 0 ]; then
+        if [ "$(grep "usr/local/share/doc/$BASENAME" $REPOLIST)" ]; then
+          REMOTECOPYRIGHT=1
+          echo -e "\t${RED}Repository copy of $F includes a copyright statement.${NORMAL}"
+        else
+          echo -e "\t${GREEN}Repo copy of $F does NOT include copyright statement.${NORMAL}"
+        fi
+      else
+        echo -e "\t${YELLOW}$F not found on server.${NORMAL}"
+      fi
+    fi
+
+    echo "$F: copyright information not found at usr/local/share/doc/$BASENAME/" >> \
+    /tmp/submitqc/copyright
+    [ $REMOTECCOPYRIGHT ] && echo -e "\tRepository copy includes a copyright statement." >> \
+    /tmp/submitqc/copyright
+
+  else
+    echo -e "${GREEN}Looks ok.${NORMAL}"
+  fi
+
+  unset MISSING
+  unset REMOTECOPYRIGHT
+
 } # end checkcopyright
 
 # check permissions of all files/directories

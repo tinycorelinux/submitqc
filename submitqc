@@ -81,6 +81,7 @@
 #<<           checked
 #<<        * check for PPI compatibility [deprecated?]
 #<<           checked, it's deprecated
+#<<  20230907 - minor bug fix, default behavior for permission check: warn --> fix (polikuo)
 #<<
 #<<  STUFF TO DO
 #<<
@@ -101,7 +102,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20230831"
+VERSIONSTRING="20230907"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
 
@@ -121,6 +122,7 @@ do
     --help) USAGE=1 ;;
     --tcz=*) TCZLIST="$(basename ${i#--tcz=} .tcz).tcz" ;;
     --fix) FIXFILES=1 ;;
+    --no-fix) FIXFILES='' ;; # --fix untouch for backward compatibility
     --strip) STRIP=1 ;;
     --self-package) PACKAGING=1 ;;
     --changes) cat $(which $0) | grep "^#<<" | sed 's/^#<<//' ; exit ;;
@@ -152,7 +154,7 @@ if [ ! "$PACKAGING" ]; then
     echo "This unstable release ($VERSIONSTRING) is UNDER TESTING for TC5+, x86/x86_64/armv7."
     echo "In particular, feedback/testing on Pi/ARM usage is welcome!"
     echo ""
-    echo "Usage: $SCRIPT [-?|-h|--help] [--kernel=KVER] [--nonet] [--fix] \
+    echo "Usage: $SCRIPT [-?|-h|--help] [--kernel=KVER] [--nonet] [--no-fix] \
     [--tcz=TCZFILE] [TCZFILE] [--changes] [--license]" | fmt -w 75 -u -t
     echo ""
     echo "Run $SCRIPT in the same directory as your extension(s). It will find & \
@@ -166,7 +168,8 @@ if [ ! "$PACKAGING" ]; then
     echo -e "\t--arch=ARCH\tRefer to online repo for architecture ARCH (default: \`uname -m\`)"
     echo -e "\t--libs\t\ttry dynamic library inclusion tests (unstable; time-consuming)"
     echo -e "\t--nonet\t\tdisable network-based checks"
-    echo -e "\t--fix\t\tFix chmod/chown inconsistencies (default: warn)"
+    echo -e "\t--fix\t\tFix chmod/chown inconsistencies (default: fix)"
+    echo -e "\t--no-fix\t\tDon't fix chmod/chown inconsistencies (default: fix)"
     echo -e "\t--strip\t\tstrip any unstripped binaries (default: warn)"
     echo -e "\t--changes\tview change and planning details"
     echo -e "\t--self-package\tself-package under /tmp/${SCRIPT}-pkg/"
@@ -215,6 +218,7 @@ case "$ARCH" in
 esac
 
 # other global variables
+FIXFILES=1
 REPO_URL="$(cat /opt/tcemirror)$TCVER/$ARCH/tcz"
 CHANGES= # when script makes changes to extension, remember to rebuild
 FILE_INFO=$(mktemp) # a temporary file to hold output from the "file" command
@@ -802,7 +806,7 @@ checkfileperms() {
         # sudo chown root:root $D_RR $F_RR
         # use '-h' so it affects the links
         # guard the command length with awk
-        echo "${D_RR}${F_RR}" | sudo awk 'BEGIN{E=0}{
+        echo -e "${D_RR}\n${F_RR}" | sudo awk 'BEGIN{E=0}{
           if(length(buff " " $0) > 130000) {
             e=system("chown -h root:root" buff)
             E = E || e
@@ -827,7 +831,7 @@ checkfileperms() {
         # sudo chmod --reference=$MODETMP $D_755 $F_755
         # rm -f $MODETMP
         # just use 'chmod 0755'
-        echo "${F_755}${D_755}" | sudo awk 'BEGIN{E=0}{
+        echo -e "${F_755}\n${D_755}" | sudo awk 'BEGIN{E=0}{
           if(length(buff " " $0) > 130000) {
             e=system("chmod 0755" buff)
             E = E || e
@@ -888,7 +892,8 @@ checkstripping() {
 
   # get a list of all un-stripped binaries.
   # unlikely, but filenames may contain colons ":"
-  BIN=$(grep 'not stripped' $FILE_INFO | sed 's_: .*__g')
+  # for compilers, gcc or clang, some object files should not be stripped.
+  BIN=$(grep 'not stripped' $FILE_INFO | grep -v 'relocatable' | sed 's_: .*__g')
 
   # (
   #   find -type f -exec file {} \; | grep 'not stripped' | cut -f1 -d: | sort | uniq \

@@ -786,7 +786,7 @@ checkfileperms() {
     # 644
     if [ "$F_644" ]; then
       P_OUT=$(echo "$F_644" | sort -u | sed -e 's_^\./__' -e 's_^_\t\t_')
-      echo "\t${YELLOW}Expected 644 permission:\n${P_OUT}${NORMAL}\n"
+      echo -e "\t${YELLOW}Expected 644 permission:\n${P_OUT}${NORMAL}\n"
     fi
     # logging
     echo "${F}: Some directory or file permissions were incorrect or non-standard." >> $LOG

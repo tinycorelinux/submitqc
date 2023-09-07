@@ -644,8 +644,8 @@ checkstartup() {
     DIRERROR=1
   fi
 
-  if [ ! "$(stat -c%a ${SSDIR}/$BASENAME)" = 755 ]; then
-    sudo chmod 755 "${SSDIR}/$BASENAME"
+  if [ ! "$(stat -c%a ${SSDIR}/$BASENAME)" = 775 ]; then
+    sudo chmod 775 "${SSDIR}/$BASENAME"
     echo -ne "\n\t${YELLOW}Startup script permissions were corrected.${NORMAL}"
     DIRERROR=1
   fi

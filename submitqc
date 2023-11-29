@@ -884,6 +884,12 @@ checkfileperms() {
 
 }
 
+# Warn elfs linked to /lib64/
+checklib64() {
+  echo -n "${BLUE}$SCRIPT: $F have any /lib64 dependencies? ${NORMAL}"
+  find . -exec sh -c 'ldd {} 2>/dev/null | grep -q "/lib64/" && echo "File {} is linked to /lib64"' \;
+}
+
 # check binaries have been stripped
 checkstripping() {
 
@@ -1688,8 +1694,9 @@ for F in $TCZLIST; do
       prepareinfo # store the output of "find" and "ls", only need to find once
       checkstartup # check/fix tce.installed (775, root:staff, one script of same name as ext)
       checkcopyright # look for COPYING or other doc at usr/local/share/doc/$F
-      checkfileperms # check/fix directory & file permissions. Fix on --fix.
+      checkfileperms # check/fix directory & file permissions. Fix on --fix.z
       checkstripping # ensure binaries/libraries have been stripped. Strip on --strip.
+      checklib64 # Warn elfs linked to /lib64/
       checklist # check list file against squashfs and repo
 
       checklibs # check what binary dependencies the included binaries contain ...

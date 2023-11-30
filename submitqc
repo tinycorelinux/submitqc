@@ -1694,7 +1694,7 @@ for F in $TCZLIST; do
       prepareinfo # store the output of "find" and "ls", only need to find once
       checkstartup # check/fix tce.installed (775, root:staff, one script of same name as ext)
       checkcopyright # look for COPYING or other doc at usr/local/share/doc/$F
-      checkfileperms # check/fix directory & file permissions. Fix on --fix.z
+      checkfileperms # check/fix directory & file permissions. Fix on --fix.
       checkstripping # ensure binaries/libraries have been stripped. Strip on --strip.
       checklib64 # Warn elfs linked to /lib64/
       checklist # check list file against squashfs and repo

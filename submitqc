@@ -1634,7 +1634,7 @@ if [ $PACKAGING ]; then
 fi
 
 if [ -z "$NOLOAD" ]; then
-	loadextensions # load coreutils & the like
+  loadextensions # load coreutils & the like
 fi
 cleanuplogs # remove old logs, create new log dir at /tmp/submitqc
 checknetwork # connect to mirror if possible

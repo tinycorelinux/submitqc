@@ -1452,7 +1452,7 @@ checkinfo() {
   fi
 
   for FIELD in Change-log Comments Description Version Author Original-site \
-  Copying-policy "Extension[-_]by" Tags Current; do
+  Copying-policy "Extension[-_]by" "Tags:" Current; do
     if [ -z "$(cat "$I" | grep "$FIELD" | awk '{print $2}')" ]; then
       [ -z $ERR ] && ERR=1 && echo ""
       echo -e "\t${RED}$FIELD missing or invalid. Fix before submitting.${NORMAL}"

@@ -82,6 +82,7 @@
 #<<        * check for PPI compatibility [deprecated?]
 #<<           checked, it's deprecated
 #<<  20230907 - minor bug fix, default behavior for permission check: warn --> fix (polikuo)
+#<<  20240118 - checkinfo needs to ensure "Tags:" field exists, added --no-load flag (gnuser)
 #<<
 #<<  STUFF TO DO
 #<<
@@ -102,7 +103,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20230907"
+VERSIONSTRING="20240118"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
 
@@ -127,6 +128,7 @@ do
     --self-package) PACKAGING=1 ;;
     --changes) cat $(which $0) | grep "^#<<" | sed 's/^#<<//' ; exit ;;
     --license) cat $(which $0) | grep "^###>>>" | sed 's/^###>>>//' ; exit ;;
+    --no-load) NOLOAD=1 ;;
     *) # might be an extension filename/base
       [ -e $(basename ${i} .tcz).tcz ] && TCZLIST=$(basename ${i} .tcz).tcz
       ;;
@@ -155,7 +157,7 @@ if [ ! "$PACKAGING" ]; then
     echo "In particular, feedback/testing on Pi/ARM usage is welcome!"
     echo ""
     echo "Usage: $SCRIPT [-?|-h|--help] [--kernel=KVER] [--nonet] [--no-fix] \
-    [--tcz=TCZFILE] [TCZFILE] [--changes] [--license]" | fmt -w 75 -u -t
+    [--tcz=TCZFILE] [TCZFILE] [--changes] [--license] [--no-load]" | fmt -w 75 -u -t
     echo ""
     echo "Run $SCRIPT in the same directory as your extension(s). It will find & \
     test tcz files in the run directory." | fmt -w 75 -ut
@@ -173,6 +175,7 @@ if [ ! "$PACKAGING" ]; then
     echo -e "\t--changes\tview change and planning details"
     echo -e "\t--self-package\tself-package under /tmp/${SCRIPT}-pkg/"
     echo -e "\t--license\tview license details (GNU GPLv2)"
+    echo -e "\t--no-load\tdon't load any required extensions (coreutils, squashfs-tools, etc.)"
     echo ""
     echo "$SCRIPT is distributed under the terms of the GNU GPLv2. see --license."
     echo ""
@@ -1630,7 +1633,9 @@ if [ $PACKAGING ]; then
   exit
 fi
 
-loadextensions # load coreutils & the like
+if [ -z "$NOLOAD" ]; then
+	loadextensions # load coreutils & the like
+fi
 cleanuplogs # remove old logs, create new log dir at /tmp/submitqc
 checknetwork # connect to mirror if possible
 

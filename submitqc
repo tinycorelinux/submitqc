@@ -83,6 +83,7 @@
 #<<           checked, it's deprecated
 #<<  20230907 - minor bug fix, default behavior for permission check: warn --> fix (polikuo)
 #<<  20240118 - checkinfo needs to ensure "Tags:" field exists, added --no-load flag (gnuser)
+#<<  20240212 - cleanup fix/don't fix logic (gnuser)
 #<<
 #<<  STUFF TO DO
 #<<
@@ -103,7 +104,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20240118"
+VERSIONSTRING="20240212"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
 
@@ -122,8 +123,7 @@ do
     -h) USAGE=1 ;;
     --help) USAGE=1 ;;
     --tcz=*) TCZLIST="$(basename ${i#--tcz=} .tcz).tcz" ;;
-    --fix) FIXFILES=1 ;;
-    --no-fix) FIXFILES='' ;; # --fix untouch for backward compatibility
+    --no-fix) NOFIX=1 ;;
     --strip) STRIP=1 ;;
     --self-package) PACKAGING=1 ;;
     --changes) cat $(which $0) | grep "^#<<" | sed 's/^#<<//' ; exit ;;
@@ -220,7 +220,6 @@ case "$ARCH" in
 esac
 
 # other global variables
-FIXFILES=1
 REPO_URL="$(cat /opt/tcemirror)$TCVER/$ARCH/tcz"
 CHANGES= # when script makes changes to extension, remember to rebuild
 FILE_INFO=$(mktemp) # a temporary file to hold output from the "file" command
@@ -799,7 +798,7 @@ checkfileperms() {
     [ "$F_755" ] && echo -e "Files - Expected 755:\n${F_755}\n" >> $LOG
     [ "$F_644" ] && echo -e "Files - Expected 644:\n${F_644}\n" >> $LOG
     # Fixing
-    if [ "$FIXFILES" ]; then
+    if [ -z "$NOFIX" ]; then
       # fix permission/ownership errors
       echo -e "\t${YELLOW}fixing inconsistencies ... ${NORMAL}"
 
@@ -875,9 +874,9 @@ checkfileperms() {
       echo -e "${GREEN}Ok.${NORMAL}"
     else
       echo -e "\t${RED}You have warnings. See /tmp/submitqc/fileperms.${NORMAL}"
-      echo -e "${RED}\tTo set defaults, run $SCRIPT with option --fix.${NORMAL}"
+      echo -e "${RED}\tTo set defaults, omit the --no-fix flag.${NORMAL}"
       # log it:
-      echo "To set defaults, run $SCRIPT with option --fix." >> $LOG
+      echo "To set defaults, omit the --no-fix flag." >> $LOG
     fi
   else
     echo -e "${GREEN}Ok.${NORMAL}"
@@ -1232,13 +1231,13 @@ checklibs() {
       cat $REQLOG >> $LOG
       echo >> $LOG
 
-      if [ $FIXFILES ]; then
+      if [ -z "$NOFIX" ]; then
         cat $REQLOG >> ${F}.dep
         echo -e "\t${YELLOW}These were added to $PWD/${F}.dep.${NORMAL}"
         echo "These were added to ${F}.dep:" >> $LOG
         cat $REQLOG >> $LOG
       else
-        echo -e "\t${YELLOW}Use --fix to append these to ${F}.dep${NORMAL}"
+        echo -e "\t${YELLOW}Omit the --no-fix flag to append these to ${F}.dep${NORMAL}"
       fi
     else
       echo -e "\t${YELLOW}No additions from local repo suggested.${NORMAL}"
@@ -1335,7 +1334,7 @@ checkdeps() {
   fi
 
   if [ -e "${LOG}" ]; then
-    if [ ${FIXFILES} ]; then
+    if [ -z "$NOFIX" ]; then
       echo -en "\n\t${YELLOW}Repairing .dep file ... ${NORMAL}"
 
       # for each line that does -not- end in .tcz, add it.
@@ -1348,9 +1347,9 @@ checkdeps() {
       mv -f /tmp/submitqc/missingdeps/${F}.dep-new ${F}.dep
       [ $? != 0 ] && echo "${RED}Error replacing ${F}.dep with /tmp/submitqc/missingdeps/${F}.dep-new. Halting.${NORMAL}" && exit 1
       echo -en "\n\t${GREEN}Done!${NORMAL}"
-      echo "These missing filename extensions were appended using --fix." >> $LOG
+      echo "These missing filename extensions were appended." >> $LOG
     else
-      echo -en "\n\t${YELLOW}Run $SCRIPT with --fix to repair these errors${NORMAL}"
+      echo -en "\n\t${YELLOW}Omit the --no-fix flag to repair these errors${NORMAL}"
     fi
   fi
 
@@ -1699,7 +1698,7 @@ for F in $TCZLIST; do
       prepareinfo # store the output of "find" and "ls", only need to find once
       checkstartup # check/fix tce.installed (775, root:staff, one script of same name as ext)
       checkcopyright # look for COPYING or other doc at usr/local/share/doc/$F
-      checkfileperms # check/fix directory & file permissions. Fix on --fix.
+      checkfileperms # check/fix directory & file permissions. Skipped if --no-fix.
       checkstripping # ensure binaries/libraries have been stripped. Strip on --strip.
       checklib64 # Warn elfs linked to /lib64/
       checklist # check list file against squashfs and repo

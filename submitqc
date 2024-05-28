@@ -84,6 +84,7 @@
 #<<  20230907 - minor bug fix, default behavior for permission check: warn --> fix (polikuo)
 #<<  20240118 - checkinfo needs to ensure "Tags:" field exists, added --no-load flag (gnuser)
 #<<  20240212 - cleanup fix/don't fix logic (gnuser)
+#<<  20240528 - add --blocksize flag (gnuser)
 #<<
 #<<  STUFF TO DO
 #<<
@@ -104,7 +105,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20240212"
+VERSIONSTRING="20240528"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
 
@@ -129,6 +130,7 @@ do
     --changes) cat $(which $0) | grep "^#<<" | sed 's/^#<<//' ; exit ;;
     --license) cat $(which $0) | grep "^###>>>" | sed 's/^###>>>//' ; exit ;;
     --no-load) NOLOAD=1 ;;
+    --blocksize=*) BLOCKSIZE="${i#--blocksize=}" ;;
     *) # might be an extension filename/base
       [ -e $(basename ${i} .tcz).tcz ] && TCZLIST=$(basename ${i} .tcz).tcz
       ;;
@@ -145,6 +147,7 @@ fi
 [ -z "$TCZLIST" ] && TCZLIST="$(find -maxdepth 1 -name "*.tcz" | sed 's/^\.\///')"
 [ -z "$KVER" ] && KVER="$(uname -r)"
 [ -z "$TCVER" ] && TCVER="$(version | sed 's/\..*//')"
+[ -z "$BLOCKSIZE" ] && BLOCKSIZE=4096
 TCVER=${TCVER%%.*}.x
 
 # output usage
@@ -157,7 +160,7 @@ if [ ! "$PACKAGING" ]; then
     echo "In particular, feedback/testing on Pi/ARM usage is welcome!"
     echo ""
     echo "Usage: $SCRIPT [-?|-h|--help] [--kernel=KVER] [--nonet] [--no-fix] \
-    [--tcz=TCZFILE] [TCZFILE] [--changes] [--license] [--no-load]" | fmt -w 75 -u -t
+    [--tcz=TCZFILE] [TCZFILE] [--changes] [--license] [--no-load] [--blocksize=BLOCKSIZE]" | fmt -w 75 -u -t
     echo ""
     echo "Run $SCRIPT in the same directory as your extension(s). It will find & \
     test tcz files in the run directory." | fmt -w 75 -ut
@@ -176,6 +179,7 @@ if [ ! "$PACKAGING" ]; then
     echo -e "\t--self-package\tself-package under /tmp/${SCRIPT}-pkg/"
     echo -e "\t--license\tview license details (GNU GPLv2)"
     echo -e "\t--no-load\tdon't load any required extensions (coreutils, squashfs-tools, etc.)"
+    echo -e "\t--blocksize=BLOCKSIZE\tspecify blocksize in Bytes (default is 4096; other values allowed only for 64bit)"
     echo ""
     echo "$SCRIPT is distributed under the terms of the GNU GPLv2. see --license."
     echo ""
@@ -358,7 +362,7 @@ selfpackage() {
     done
 
     # make squashfs
-    mksquashfs /tmp/${SCRIPT}/$CPU/$VER/root /tmp/${SCRIPT}/$CPU/$VER/submitqc.tcz
+    mksquashfs /tmp/${SCRIPT}/$CPU/$VER/root /tmp/${SCRIPT}/$CPU/$VER/submitqc.tcz -b "$BLOCKSIZE"
 
     # make file list
     cd /tmp/${SCRIPT}/$CPU/$VER/root/
@@ -538,13 +542,13 @@ checkmount() {
   return 0
 }
 
-# check that blocksize is 4096
+# check that blocksize is what user expects (4096 B is default)
 checkblock() {
 
   echo -n "${BLUE}$SCRIPT: ${F} correct block size? ${NORMAL}"
 
-  if ! unsquashfs -s "$F" | grep "Block size" | grep "4096" > /dev/null; then
-    echo "${YELLOW}Not in 4096 block size. Extension will be rebuilt.${NORMAL}"
+  if ! unsquashfs -s "$F" | grep "Block size" | grep "$BLOCKSIZE" > /dev/null; then
+    echo "${YELLOW}Not in $BLOCKSIZE block size. Extension will be rebuilt.${NORMAL}"
     CHANGES=1
   else
     echo "${GREEN}Yes.${NORMAL}"
@@ -1532,7 +1536,7 @@ rebuild() {
 
   # make new/fixed extension
   sudo rm -f "$F".new # jic
-  sudo mksquashfs ${SQUASHDIR} "$F".new -b 4096 -noappend > /dev/null # noappend suggested by robc
+  sudo mksquashfs ${SQUASHDIR} "$F".new -b "$BLOCKSIZE" -noappend > /dev/null # noappend suggested by robc
   [ $? != 0 ] && echo "${RED}$SCRIPT: there was an error in mksquashfs. Halting." && exit 1
   sudo chmod 664 ${F}.new
   sudo chown tc:staff ${F}.new
@@ -1660,7 +1664,6 @@ for F in $TCZLIST; do
   TEMPLIST="$SQUASHDIR"
 
   # in particular, dep check/fix should be before lib checking (in loop below)
-  checkinfo # check fields exist, etc.
   checkmaintainer # check maintainer, look for similar extension names
   checkremotedep # check exists, check against repo copy
   checkdeps # check each dependency exists (NOT recursive)
@@ -1671,7 +1674,7 @@ for F in $TCZLIST; do
 
     CHANGES= # set to 1 when the script changes some details
 
-    checkblock # ensure F was made with mksquash -b 4096
+    checkblock # ensure F was made with expected blocksize
 
     #####
     # this section runs tests from within the squashfs root directory
@@ -1713,6 +1716,7 @@ for F in $TCZLIST; do
 
     [ "$CHANGES" ] && rebuild # commit changes to new tcz file
 
+    checkinfo # check fields exist, etc.
     checkmd5sums
 
     (

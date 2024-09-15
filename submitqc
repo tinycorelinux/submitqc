@@ -85,6 +85,7 @@
 #<<  20240118 - checkinfo needs to ensure "Tags:" field exists, added --no-load flag (gnuser)
 #<<  20240212 - cleanup fix/don't fix logic (gnuser)
 #<<  20240528 - add --blocksize flag (gnuser)
+#<<  20240915 - broader recognition of executable text files (gnuser)
 #<<
 #<<  STUFF TO DO
 #<<
@@ -105,7 +106,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20240528"
+VERSIONSTRING="20240915"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
 
@@ -767,10 +768,10 @@ checkfileperms() {
   # It would go into F_644, which is unwanted behavior
   awk '/^[^d]/ && !/^-rwxr-xr-x/ && !/tce.installed/ {print $NF}' $FILE_PERM > $AWK_CACHE
   F_755=$(awk -v FS=": " -v cache="$AWK_CACHE" 'BEGIN{while(getline buff < cache)P[buff]=1}
-  P[$1] && (/: .*executable/ || /: .*shared object/) {print $1}' $FILE_INFO)
+  P[$1] && (/: .*executable/ || /: .*script/ || /: .*shared object/) {print $1}' $FILE_INFO)
   awk '/^[^d]/ && !/^-rw-r--r--/ && !/tce.installed/ {print $NF}' $FILE_PERM > $AWK_CACHE
   F_644=$(awk -v FS=": " -v cache="$AWK_CACHE" 'BEGIN{while(getline buff < cache)P[buff]=1}
-  P[$1] && !/: .*executable/ && !/: .*shared object/ && !/: .*symbolic link/ {print $1}' $FILE_INFO)
+  P[$1] && !/: .*executable/ && !/: .*script/ && !/: .*shared object/ && !/: .*symbolic link/ {print $1}' $FILE_INFO)
 
   if [ "${D_RR}${F_RR}${D_755}${F_755}${F_644}" ]; then
     # if anything

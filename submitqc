@@ -106,7 +106,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20240915"
+VERSIONSTRING="20241125"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
 
@@ -148,7 +148,7 @@ fi
 [ -z "$TCZLIST" ] && TCZLIST="$(find -maxdepth 1 -name "*.tcz" | sed 's/^\.\///')"
 [ -z "$KVER" ] && KVER="$(uname -r)"
 [ -z "$TCVER" ] && TCVER="$(version | sed 's/\..*//')"
-[ -z "$TCVER_INT" ] && TCVER_INT="$(version | grep -o '^[0-9]*')"
+# [ -z "$TCVER_INT" ] && TCVER_INT="$(version | grep -o '^[0-9]*')"
 [ -z "$BLOCKSIZE" ] && BLOCKSIZE=4096
 TCVER=${TCVER%%.*}.x
 
@@ -190,7 +190,9 @@ if [ ! "$PACKAGING" ]; then
 fi
 
 # library/dep checking variables
-[ -z "$ARCH" ] && ARCH=$(uname -m)
+# [ -z "$ARCH" ] && ARCH=$(uname -m)
+# safest way to set ARCH
+[ -z "$ARCH" ] && ARCH=$(. /etc/init.d/tc-functions; getBuild)
 RAND="$(date +%s | md5sum | head -c4)"
 REPO=/etc/sysconfig/tcedir/optional
 REQLOG=/tmp/$SCRIPT/$$-$RAND.req # libs req'd
@@ -206,31 +208,39 @@ TEMPLIST="$REQLOG $INCLOG $REPOLOG *.dep-mirror"
 # this is used during checklibs() to ignore dependency on system libs
 BASELIBS='ANSI_X3.110.so ISO8859-15.so ISO8859-1.so ISO8859-2.so ld-2.20.so ld-linux-aarch64.so.1 ld-linux-armhf.so.3 ld-linux.so.2 ld-linux-x86-64.so.2 libanl-2.20.so libanl.so libanl.so.1 libblkid.so libblkid.so.1 libblkid.so.1.1.0 libc-2.20.so libcom_err.so libcom_err.so.2 libcom_err.so.2.1 libcrypt-2.20.so libcrypt.so libcrypt.so.1 libc.so.6 libdl-2.20.so libdl.so libdl.so.2 libe2p.so libe2p.so.2 libe2p.so.2.3 libext2fs.so libext2fs.so.2 libext2fs.so.2.4 libgcc_s.so libgcc_s.so.1 libm-2.20.so libm.so libm.so.6 libnsl-2.20.so libnsl.so libnsl.so.1 libnss_compat-2.20.so libnss_compat.so libnss_compat.so.2 libnss_dns-2.20.so libnss_dns.so libnss_dns.so.2 libnss_files-2.20.so libnss_files.so libnss_files.so.2 libpthread-2.20.so libpthread.so.0 libresolv-2.20.so libresolv.so libresolv.so.2 librt-2.20.so librt.so librt.so.1 libstdc++.so libstdc++.so.6 libstdc++.so.6.0.20 libsudo_noexec.so libsysfs.so libsysfs.so.2 libsysfs.so.2.0.1 libutil-2.20.so libutil.so libutil.so.1 libuuid.so libuuid.so.1 libuuid.so.1.3.0 libz.so libz.so.1 libz.so.1.2.8 linux-gate.so.1 linux-vdso.so.1 sudo_noexec.so UNICODE.so'
 
-case "$ARCH" in
-  i686) ARCH="x86" ;;
-  x86_64) [ -f /lib/ld-linux-x86-64.so.2 ] || ARCH="x86" ;;
-  armv6*) ARCH="armv6";;
-  armv7*)
-    # Use raspi cpu revision to detect board
-    # REV 1=BCM2836, 2=BCM2837, 3=BCM2711
-    REV=$(cat /proc/cpuinfo | awk '/Revision/ {print $3}')
-    REV=${REV:-6}
-    case ${REV:2:1} in
-      1|2) ARCH="armv7";;
-      3) ARCH="armv7l";;
-      *) echo "$SCRIPT: Unrecognized armv7 architecture. See --help." && exit 1 ;;
-    esac
-    ;;
-  aarch64) ARCH="aarch64";;
-  *) echo "$SCRIPT: Unrecognized architecture '$ARCH'. See --help." && exit 1 ;;
-esac
+# case "$ARCH" in
+#   i686) ARCH="x86" ;;
+#   x86_64) [ -f /lib/ld-linux-x86-64.so.2 ] || ARCH="x86" ;;
+#   armv6*) ARCH="armv6";;
+#   armv7*)
+#     # Use raspi cpu revision to detect board
+#     # REV 1=BCM2836, 2=BCM2837, 3=BCM2711
+#     REV=$(cat /proc/cpuinfo | awk '/Revision/ {print $3}')
+#     REV=${REV:-6}
+#     case ${REV:2:1} in
+#       1|2) ARCH="armv7";;
+#       3) ARCH="armv7l";;
+#       *) echo "$SCRIPT: Unrecognized armv7 architecture. See --help." && exit 1 ;;
+#     esac
+#     ;;
+#   aarch64) ARCH="aarch64";;
+#   *) echo "$SCRIPT: Unrecognized architecture '$ARCH'. See --help." && exit 1 ;;
+# esac
+
+for KNOWN_ARCH in x86 x86_64 armv6 armv7 armv7l armhf aarch64; do
+  [ $ARCH = $KNOWN_ARCH ] && FOUND_KNOWN_ARCH=1
+done
+if [ -z "$FOUND_KNOWN_ARCH" ]; then
+  echo "$SCRIPT: Unrecognized architecture '$ARCH'. See --help."
+  exit 1
+fi
 
 # other global variables
 REPO_URL="$(cat /opt/tcemirror)$TCVER/$ARCH/tcz"
+FILE_INFO=$(mktemp -t submitqc.file.XXXXXX) # a temporary file to hold output from the "file" command
+FILE_PERM=$(mktemp -t submitqc.perm.XXXXXX) # a temporary file to hold output from the "ls" command
+AWK_CACHE=$(mktemp -t submitqc.cache.XXXXXX) # a temporary file for "awk" to hold stuff
 CHANGES= # when script makes changes to extension, remember to rebuild
-FILE_INFO=$(mktemp) # a temporary file to hold output from the "file" command
-FILE_PERM=$(mktemp) # a temporary file to hold output from the "ls" command
-AWK_CACHE=$(mktemp) # a temporary file for "awk" to hold stuff
 
 ####################
 ####################
@@ -274,7 +284,7 @@ announce() {
   echo ""
   echo "=============================================================="
   echo "This is the Tiny Core extension submission quality testing tool."
-  echo "This pre-release is UNDER TESTING for TC5/6 and x86/x86_64."
+  # echo "This pre-release is UNDER TESTING for TC5/6 and x86/x86_64."
   echo ""
   echo "see --help for usage instructions."
   echo ""
@@ -288,13 +298,13 @@ announce() {
 # self-packaging - cool!
 selfpackage() {
 
-  if [ "$TCVER_INT" -gt 5 ]; then
+  # if [ "$TCVER_INT" -gt 5 ]; then
     tce-load -i squashfs-tools
     [ $? != 0 ] && echo "Need squashfs-tools!" && exit 1
-  else
-    tce-load -i squashfs-tools-4.x
-    [ $? != 0 ] && echo "Need squashfs-tools-4.x!" && exit 1
-  fi
+  # else
+  #   tce-load -i squashfs-tools-4.x
+  #   [ $? != 0 ] && echo "Need squashfs-tools-4.x!" && exit 1
+  # fi
 
   # if [ "${ARCH}" != "armv7" ]; then
     tce-load -i zsync
@@ -424,11 +434,14 @@ loadextensions() {
   echo -n "${BLUE}$SCRIPT: loading required extensions ... ${NORMAL}"
 
   # load dependencies
-  if [ "$TCVER_INT" -gt "5" ]; then
-    DEPLIST="file diffutils squashfs-tools wget coreutils grep"
-  else
-    DEPLIST="file diffutils squashfs-tools-4.x wget coreutils grep"
-  fi
+  # if [ "$TCVER_INT" -gt "5" ]; then
+  #   DEPLIST="file diffutils squashfs-tools wget coreutils grep"
+  # else
+  #   DEPLIST="file diffutils squashfs-tools-4.x wget coreutils grep"
+  # fi
+
+  # TC is removing the 4.x release, do we still need this checker ?
+  DEPLIST="file diffutils squashfs-tools wget coreutils grep"
 
   # not available on arm at 20160316
   # totally fine now 20230828

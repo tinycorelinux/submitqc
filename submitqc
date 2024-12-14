@@ -462,11 +462,13 @@ cleanuplogs() {
 
   echo -n "${BLUE}$SCRIPT: removing old log files. ${NORMAL}"
   rm -rf /tmp/submitqc
+  rm -rf /tmp/submitqc-tmp
 
   echo "${GREEN}Ok.${NORMAL}"
 
   echo -n "${BLUE}$SCRIPT: making space for new log files. ${NORMAL}"
   mkdir -p /tmp/submitqc/missingdeps
+  mkdir -p /tmp/submitqc-tmp
 
   echo "${GREEN}Done.${NORMAL}"
 
@@ -1635,6 +1637,167 @@ prepareinfo() {
   } END {if(buff) system("file" buff " >> " cache)}' $FILE_PERM
 } # end prepareinfo()
 
+
+# Check for redundant dependencies.
+checkdepfamilies() {
+  echo -n "${BLUE}$SCRIPT: $F contains redundant dependencies (extension families) in .dep file ? ${NORMAL}"
+
+  if [ ! "$INET" ]; then
+    echo -e "\n${YELLOW}$SCRIPT: Network/mirror down.\n${NORMAL}"
+    return
+  fi
+
+  # Return if no .dep file.
+  if [ ! -f "$F.dep" ]; then
+    echo "${GREEN}No .dep file. Ok.${NORMAL}"
+    return
+  fi
+
+  # Location for storing temporary .tree file downloads.
+  # We need this to store the processed(whitespace,
+  # kernel version and name removal) .tree files.
+  # We are using a directory for these files so that we do not
+  # poll the repo for _every_ .tree file. These .tree files can
+  # be reused within a single invocation of submitqc for a
+  # collection of TCZs.
+  SUBMITQC_TMP_LOCATION="/tmp/submitqc-tmp"
+  mkdir -p "$SUBMITQC_TMP_LOCATION"
+
+  # Regex for substituting hard coded kernel values in
+  # .tree files.
+  KERNEL_SUBSTITUTION_STRING=""
+  case $ARCH in
+    x86*) KERNEL_SUBSTITUTION_STRING='\-[0-9]+.[0-9]+.[0-9]+-tinycore.*.tcz' ;;
+    armv*|aarch*) KERNEL_SUBSTITUTION_STRING='\-[0-9]+.[0-9]+.[0-9]+-piCore.*.tcz' ;;
+  esac
+
+  # Dependency resolution for redundant dependencies.
+  # DEPS_FOUND = Deps currently known to be required.
+  DEP_FILE="$F.dep"
+  DEPS_FOUND=""
+  while IFS= read -r dep; do
+    if stringinstring "tinycore" "$dep" || stringinstring "piCore" "$dep"; then
+      dep="$(echo "$dep" | sed -r "s,$KERNEL_SUBSTITUTION_STRING,-KERNEL.tcz,g")"
+    fi
+    [ -n "$dep" ] && DEPS_FOUND="$(echo -e "$dep\n$DEPS_FOUND")"
+  done < "$DEP_FILE"
+
+  # INDEX = Track the index of dep that is now being analyzed.
+  # OLD_SIZE = Size of deps in previous run of resolving.
+  # NEW_SIZE = Size of deps in current run of resolving.
+  # Working:
+  # WHILE OLD_SIZE < NEWSIZE || (OLD_SIZE < NEW_SIZE && INDEX < NEW_SIZE)
+  #   Get current dep name using INDEX.
+  #   Get .tree file of current dep (if not found on repo or -KERNEL dep, make empty file).
+  #   Clean the .tree file from dep name, kernel and whitespace.
+  #   Sort .tree file and remove duplicates.
+  #   Save the processed .tree file in /tmp/submitqc-tmp/.
+  #
+  #   Remove every sub-dep listed in .tree file from the DEPS_FOUND.
+  #
+  #   Update OLD_SIZE and NEW_SIZE
+  #   IF NEW_SIZE < OLD_SIZE
+  #     INDEX = 1
+  #   ELSE
+  #     INDEX += 1
+  # DONE.
+  INDEX=1
+  OLD_SIZE=0
+  NEW_SIZE="$(echo -e "$DEPS_FOUND" | wc -l)"
+  while {
+      # Some deps are removed. Start counting dep list from beginning.
+      { [ "$OLD_SIZE" -ne "$NEW_SIZE" ]; } ||
+      # No deps are removed, keep analyzing the current list of dependencies.
+      { [ "$OLD_SIZE" -eq "$NEW_SIZE" ] && [ "$INDEX" -le "$NEW_SIZE" ]; };
+  }; do
+    current_dep="$(echo -e "$DEPS_FOUND" | sed "${INDEX}q;d" | tr -d " \n")"
+    current_dep_tree="$SUBMITQC_TMP_LOCATION/$current_dep.tree"
+
+    # Download .tree file if not present.
+    if [ ! -f "$current_dep_tree" ]; then
+      if stringinstring "-KERNEL" "$current_dep"; then
+        # Ignore KERNEL dependency .tree files.
+        echo "" > "$current_dep_tree"
+      elif ! wget -c -q -O "$current_dep_tree" "$REPO_URL/$current_dep.tree"; then
+        # Ignore dependency. No .tree file.
+        echo "" > "$current_dep_tree"
+      else
+        # Delete its own name, whitespace and -KERNEL from .tree file.
+        clean_tree_file=""
+        while IFS= read -r line; do
+          line="$(echo "$line" | tr -d " " | tr -s "\n")"
+          # Remove the value of current dep in its own .tree file.
+          if [ -z "$line" ] || [ "$line" == "$current_dep" ]; then
+            continue
+          fi
+
+          # Replace hardcoded kernel values in .tree files with -KERNEL in TCZ names.
+          if stringinstring "tinycore" "$line" || stringinstring "piCore" "$line"; then
+            line="$(echo "$line" | sed -r "s,$KERNEL_SUBSTITUTION_STRING,-KERNEL.tcz,g")"
+          fi
+
+          clean_tree_file="$(echo -e "${line}\n${clean_tree_file}")"
+        done < "$current_dep_tree"
+
+        echo -e "$clean_tree_file" > "$current_dep_tree"
+        uniq "$current_dep_tree" | sort -s -u -b -d | sed '/^\s*$/d' > /tmp/temporary_file
+        mv /tmp/temporary_file "$current_dep_tree"
+      fi
+    fi
+
+    # Remove sub-deps of the current dep from list with data from .tree.
+    while IFS= read -r already_present_dep; do
+      if [ -n "$already_present_dep" ] && [ "$already_present_dep" != "$current_dep" ]; then
+        escaped_dep="$(echo -n "${already_present_dep}" | sed 's,\.,\\\.,g' | tr -d " \n")"
+        DEPS_FOUND="$(echo -n "$DEPS_FOUND" | sed -r "s,^${escaped_dep}$,,g" | sed '/^\s*$/d' | tr -s "\n")"
+      fi
+    done < "$current_dep_tree"
+
+
+    # If removed redundancies, new size will be less than
+    # old size. Restart resolving from beginning of the
+    # new list.
+    # Otherwise, copy new size into old size so that
+    # deps in new list are continued to be analysed
+    # one-by-one.
+    OLD_SIZE=$NEW_SIZE
+    NEW_SIZE="$(echo -e "$DEPS_FOUND" | wc -l)"
+    if [ "$NEW_SIZE" -lt "$OLD_SIZE" ]; then
+      INDEX=1
+    else
+      INDEX=$((INDEX + 1))
+    fi
+  done
+
+  # If resolved and removed redundancy, replace .dep file.
+  # Otherwise, just return.
+  OLD_DEPS_COUNT="$(cat "$F.dep" | tr -d " " | tr -s "\n" | wc -l)"
+  NEW_DEPS_COUNT="$(echo "$DEPS_FOUND" | wc -l)"
+  if [ "$NEW_DEPS_COUNT" -lt "$OLD_DEPS_COUNT" ]; then
+    echo -e "\n${YELLOW}Originally found ${GREEN}$OLD_DEPS_COUNT${YELLOW} deps"
+    echo -e "${YELLOW}Now reduced to ${GREEN}$NEW_DEPS_COUNT${YELLOW}."
+
+    if [ -z "$NOFIX" ]; then
+      mv "$F.dep" "$F.dep.bak"
+      echo "$DEPS_FOUND" > "$F.dep"
+    else
+      echo "${YELLOW}--no-fix enabled. Please remove the argument to remove redundant dependencies."
+    fi
+
+    # Log reporting.
+    {
+      echo -e "Reduced dependencies from:\n"
+      cat "$F.dep.bak"
+      echo -e "\nto:\n"
+      echo "$DEPS_FOUND"
+    }  > /tmp/submitqc/redundantdependencies
+  else
+    echo -e "\n${GREEN}No redundant dependencies found in $F.dep file.${NORMAL}"
+  fi
+  echo "${GREEN}Ok.${NORMAL}"
+}
+
+
 ####################
 #########################
 # MAIN STUFF BEGINS
@@ -1732,6 +1895,7 @@ for F in $TCZLIST; do
     [ "$CHANGES" ] && rebuild # commit changes to new tcz file
 
     checkinfo # check fields exist, etc.
+    checkdepfamilies
     checkmd5sums
 
     (

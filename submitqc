@@ -86,10 +86,10 @@
 #<<  20240212 - cleanup fix/don't fix logic (gnuser)
 #<<  20240528 - add --blocksize flag (gnuser)
 #<<  20240915 - broader recognition of executable text files (gnuser)
+#<<  20241215 - check for redundant dependencies (extension families) and remove them (make a backup) (Sashank999)
 #<<
 #<<  STUFF TO DO
 #<<
-#<<  * search dep file for extension families (ie: don't include both child & grandchild deps)
 #<<  * if usr/local/share/applications/ is included, expect $F.desktop and icon
 #<<  * if usr/local/share/pixmaps/ included, expect $F.png (icon file)
 #<<  * checktgz should check the content and structure of the tgz file (should this be xz?)
@@ -106,16 +106,18 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20241125"
+VERSIONSTRING="20241215"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
+. /etc/init.d/tc-functions
+COLOR=0
 
 # handle cmdline args
 for i in $*
 do
   case $i in
-    -c) . /etc/init.d/tc-functions ;;
-    --color) . /etc/init.d/tc-functions ;;
+    -c) COLOR=1 ;;
+    --color) COLOR=1 ;;
     --kernel=*) KVER="${i#--kernel=}"; KERNELFORCE=1 ;;
     --core=*) TCVER="${i#--core=}" ;;
     --arch=*) ARCH="${i#--arch=}" ;;
@@ -137,6 +139,24 @@ do
       ;;
   esac
 done
+
+# Reset color code variables unless --color is explicitly enabled.
+# This is done in order to stay compatible with the old behaviour,
+# which did not source /etc/init.d/tc-functions causing colors
+# to just be ignored. Now it is sourced always, causing colored
+# output as default behaviour.
+if [ $COLOR = 0 ]; then
+  CRE=""
+  RED=""
+  GREEN=""
+  YELLOW=""
+  BLUE=""
+  MAGENTA=""
+  CYAN=""
+  WHITE=""
+  NORMAL=""
+fi
+
 
 # set up list of extensions to check
 

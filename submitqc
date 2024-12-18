@@ -87,6 +87,7 @@
 #<<  20240528 - add --blocksize flag (gnuser)
 #<<  20240915 - broader recognition of executable text files (gnuser)
 #<<  20241215 - check for redundant dependencies (extension families) and remove them (make a backup) (Sashank999)
+#<<  20241218 - redundant dependency check reimplemented in awk (Sashank999)
 #<<
 #<<  STUFF TO DO
 #<<
@@ -106,7 +107,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20241215"
+VERSIONSTRING="20241218"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
 . /etc/init.d/tc-functions

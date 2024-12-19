@@ -1463,7 +1463,15 @@ checkinfo() {
 
   if [ ! -f "$F".info ]; then
     echo -e "\n\t${RED}${F}.info file not found. Do NOT submit without it.${NORMAL}"
-    echo "$F" >> /tmp/submitqc/noinfofile
+
+    if wget --spider -q "${REPO_URL}/$F.info" &> /dev/null; then
+      wget -q "${REPO_URL}/$F.info"
+      echo -e "\t${YELLOW}Found $F.info in repo. Fetching it.\n\tModify the $F.info to include any updates."
+      echo "$F" >> /tmp/submitqc/notmodifiedinfofile
+    else
+      echo "$F" >> /tmp/submitqc/noinfofile
+    fi
+
     return
   fi
 

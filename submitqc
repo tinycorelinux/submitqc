@@ -462,7 +462,7 @@ loadextensions() {
   # fi
 
   # TC is removing the 4.x release, do we still need this checker ?
-  DEPLIST="file diffutils squashfs-tools wget coreutils grep"
+  DEPLIST="file diffutils squashfs-tools wget coreutils grep zsync"
 
   # not available on arm at 20160316
   # totally fine now 20230828

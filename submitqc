@@ -88,6 +88,7 @@
 #<<  20240915 - broader recognition of executable text files (gnuser)
 #<<  20241215 - check for redundant dependencies (extension families) and remove them (make a backup) (Sashank999)
 #<<  20241218 - redundant dependency check reimplemented in awk (Sashank999)
+#<<  20241219 - add zsync to required deps, check source.tgz file contents, fetch .info file from repo if not present locally (Sashank999)
 #<<
 #<<  STUFF TO DO
 #<<
@@ -107,7 +108,7 @@
 
 RUNDIR="$PWD"
 SCRIPT=$(basename $0)
-VERSIONSTRING="20241218"
+VERSIONSTRING="20241219"
 [ $(echo "$VERSIONSTRING" | grep "$(date '+%Y%m%d')") ] && VERSIONSTRING="SOURCE RUN"
 
 . /etc/init.d/tc-functions
@@ -462,7 +463,7 @@ loadextensions() {
   # fi
 
   # TC is removing the 4.x release, do we still need this checker ?
-  DEPLIST="file diffutils squashfs-tools wget coreutils grep"
+  DEPLIST="file diffutils squashfs-tools wget coreutils grep zsync"
 
   # not available on arm at 20160316
   # totally fine now 20230828
@@ -1463,7 +1464,15 @@ checkinfo() {
 
   if [ ! -f "$F".info ]; then
     echo -e "\n\t${RED}${F}.info file not found. Do NOT submit without it.${NORMAL}"
-    echo "$F" >> /tmp/submitqc/noinfofile
+
+    if wget --spider -q "${REPO_URL}/$F.info" &> /dev/null; then
+      wget -q "${REPO_URL}/$F.info"
+      echo -e "\t${YELLOW}Found $F.info in repo. Fetching it.\n\tModify the $F.info to include any updates."
+      echo "$F" >> /tmp/submitqc/notmodifiedinfofile
+    else
+      echo "$F" >> /tmp/submitqc/noinfofile
+    fi
+
     return
   fi
 
@@ -1608,15 +1617,34 @@ checkbuilddep() {
 # look tgz that contains source & script
 checktgz() {
 
-  echo -n "${BLUE}$SCRIPT: $F.tgz included?${NORMAL}"
+  echo -n "${BLUE}$SCRIPT: $F.tgz or $F.tar.gz included?${NORMAL}"
+
+  if [ -f "$F.tar.gz" ]; then
+    if [ -f "$F.tgz" ]; then
+      echo "${YELLOW}$F.tar.gz and $F.tgz both found. Using $F.tgz."
+    else
+      echo "${YELLOW}Found only $F.tar.gz. Changing it to $F.tgz."
+      mv "$F.tar.gz" "$F.tgz"
+    fi
+  fi
 
   if [ ! -e "$F.tgz" ]; then
     echo -e "\n\t${GREEN}Not found, but it is suggested/requested.${NORMAL}"
     return
   fi
 
-  # check file type - I think this should be xz?
+  # check file type
+  if ! tar tf "$F.tgz" &> /dev/null && ! gzip -t "$F.tgz" &> /dev/null; then
+    echo "${RED}Found errors in testing the integrity of $F.tgz. Please repack it."
+    echo "Found errors in testing the integrity of $F.tgz. Please repack it." > /tmp/submitqc/badtgz
+    return
+  fi
+
   # check file content
+  if [ "$(tar tf "$F.tgz" | wc -l)" -eq 0 ]; then
+    echo "${RED}No files found in $F.tgz. Please check your source archive before submission."
+    echo "No files found in $F.tgz. Please check your source archive before submission." > /tmp/submitqc/emptytgz
+  fi
 
   echo "${GREEN}Yes - thanks!${NORMAL}"
 

@@ -1608,15 +1608,34 @@ checkbuilddep() {
 # look tgz that contains source & script
 checktgz() {
 
-  echo -n "${BLUE}$SCRIPT: $F.tgz included?${NORMAL}"
+  echo -n "${BLUE}$SCRIPT: $F.tgz or $F.tar.gz included?${NORMAL}"
+
+  if [ -f "$F.tar.gz" ]; then
+    if [ -f "$F.tgz" ]; then
+      echo "${YELLOW}$F.tar.gz and $F.tgz both found. Using $F.tgz."
+    else
+      echo "${YELLOW}Found only $F.tar.gz. Changing it to $F.tgz."
+      mv "$F.tar.gz" "$F.tgz"
+    fi
+  fi
 
   if [ ! -e "$F.tgz" ]; then
     echo -e "\n\t${GREEN}Not found, but it is suggested/requested.${NORMAL}"
     return
   fi
 
-  # check file type - I think this should be xz?
+  # check file type
+  if ! tar tf "$F.tgz" &> /dev/null && ! gzip -t "$F.tgz" &> /dev/null; then
+    echo "${RED}Found errors in testing the integrity of $F.tgz. Please repack it."
+    echo "Found errors in testing the integrity of $F.tgz. Please repack it." > /tmp/submitqc/badtgz
+    return
+  fi
+
   # check file content
+  if [ "$(tar tf "$F.tgz" | wc -l)" -eq 0 ]; then
+    echo "${RED}No files found in $F.tgz. Please check your source archive before submission."
+    echo "No files found in $F.tgz. Please check your source archive before submission." > /tmp/submitqc/emptytgz
+  fi
 
   echo "${GREEN}Yes - thanks!${NORMAL}"
 

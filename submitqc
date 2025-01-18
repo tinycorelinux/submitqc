@@ -935,8 +935,29 @@ checkfileperms() {
 
 # Warn elfs linked to /lib64/
 checklib64() {
-  echo -n "${BLUE}$SCRIPT: $F have any /lib64 dependencies? ${NORMAL}"
-  find . -exec sh -c 'ldd {} 2>/dev/null | grep -q "/lib64/" && echo "File {} is linked to /lib64"' \;
+  echo -n "${BLUE}$SCRIPT: $F has any /lib64 dependencies?${NORMAL}"
+
+  FOUND=false
+  for file in $(find . -type f); do
+    if ldd "$file" 2>/dev/null | grep -q "/lib64/"; then
+      if ! $FOUND; then
+        echo "${YELLOW}The following ELFs are linked to /lib64.${NORMAL}"
+        echo "The following ELFs are linked to /lib64." >> /tmp/submitqc/lib64linkerrors
+        FOUND=true
+      fi
+      echo "${YELLOW}$file is linked to /lib64.${NORMAL}"
+      echo "$file is linked to /lib64." >> /tmp/submitqc/lib64linkerrors
+    fi
+  done
+
+  if $FOUND; then
+    echo "${RED}Compiled ELFs are linked to /lib64.${NORMAL}"
+    echo "${RED}Please link to /lib or /usr/local/lib directories instead.${NORMAL}"
+    echo "Compiled ELFs are linked to /lib64." >> /tmp/submitqc/lib64linkerrors
+    echo "Please link to /lib or /usr/local/lib directories instead." >> /tmp/submitqc/lib64linkerrors
+  else
+    echo "${GREEN} None.${NORMAL}"
+  fi
 }
 
 # check binaries have been stripped

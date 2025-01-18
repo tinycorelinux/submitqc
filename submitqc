@@ -89,6 +89,7 @@
 #<<  20241215 - check for redundant dependencies (extension families) and remove them (make a backup) (Sashank999)
 #<<  20241218 - redundant dependency check reimplemented in awk (Sashank999)
 #<<  20241219 - add zsync to required deps, check source.tgz file contents, fetch .info file from repo if not present locally (Sashank999)
+#<<  20250118 - add -KERNEL substitution to library dependency checking, remove SUID bits from directories, add error log for /lib64 dependency linking (Sashank999)
 #<<
 #<<  STUFF TO DO
 #<<

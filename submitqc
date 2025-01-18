@@ -878,16 +878,17 @@ checkfileperms() {
         # sudo chmod --reference=$MODETMP $D_755 $F_755
         # rm -f $MODETMP
         # just use 'chmod 0755'
+        # Using 'chmod 00755' so that sticky bit for directories is also removed.
         echo -e "${F_755}\n${D_755}" | sudo awk 'BEGIN{E=0}{
           if(length(buff " " $0) > 130000) {
-            e=system("chmod 0755" buff)
+            e=system("chmod 00755" buff)
             E = E || e
             buff = ""
           }
           buff = buff " " $0
         } END {
           if(buff) {
-            e=system("chmod 0755" buff)
+            e=system("chmod 00755" buff)
             E = E || e
           }
           exit E
@@ -900,14 +901,14 @@ checkfileperms() {
         # sudo chmod 644 $F_644
         echo "$F_644" | sudo awk 'BEGIN{E=0}{
           if(length(buff " " $0) > 130000) {
-            e=system("chmod 0644" buff)
+            e=system("chmod 00644" buff)
             E = E || e
             buff = ""
           }
           buff = buff " " $0
         } END {
           if(buff) {
-            e=system("chmod 0644" buff)
+            e=system("chmod 00644" buff)
             E = E || e
           }
           exit E

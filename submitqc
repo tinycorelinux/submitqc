@@ -1120,18 +1120,21 @@ Making new ${F}.list ... ${NORMAL}"
 # list all libs included in $1 and deps, fill INCLOG
 getinclibs() {
 
-  # skip if we've already checked this file. Note if we haven't.
-  echo $CHECKLIST | grep -q " $1" && return
-    # echo -e "\nskip $1 re-check" && return # avoid re-checking already checked
-  CHECKLIST="$CHECKLIST $1"
+  # Substitute -KERNEL variable.
+  dependent_tcz="$(echo $1 | sed "s/KERNEL/$KVER/")"
 
-  # if $1 exists
-  if [ -e $1 ]; then
-    EXT="$1"
-  elif [ -e $REPO/$1 ]; then
-    EXT="$REPO/$1"
+  # skip if we've already checked this file. Note if we haven't.
+  echo $CHECKLIST | grep -q " $dependent_tcz" && return
+    # echo -e "\nskip $dependent_tcz re-check" && return # avoid re-checking already checked
+  CHECKLIST="$CHECKLIST $dependent_tcz"
+
+  # if $dependent_tcz exists
+  if [ -e $dependent_tcz ]; then
+    EXT="$dependent_tcz"
+  elif [ -e $REPO/$dependent_tcz ]; then
+    EXT="$REPO/$dependent_tcz"
   else
-    echo -e "\n\tWARNING: dependency $1 missing - tests will be inconclusive."
+    echo -e "\n\tWARNING: dependency $dependent_tcz missing - tests will be inconclusive."
     LIBTESTERROR=1
     return 1
   fi

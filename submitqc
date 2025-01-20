@@ -89,6 +89,7 @@
 #<<  20241215 - check for redundant dependencies (extension families) and remove them (make a backup) (Sashank999)
 #<<  20241218 - redundant dependency check reimplemented in awk (Sashank999)
 #<<  20241219 - add zsync to required deps, check source.tgz file contents, fetch .info file from repo if not present locally (Sashank999)
+#<<  20250118 - add -KERNEL substitution to library dependency checking, remove SUID bits from directories, add error log for /lib64 dependency linking (Sashank999)
 #<<
 #<<  STUFF TO DO
 #<<
@@ -878,16 +879,17 @@ checkfileperms() {
         # sudo chmod --reference=$MODETMP $D_755 $F_755
         # rm -f $MODETMP
         # just use 'chmod 0755'
+        # Using 'chmod 00755' so that sticky bit for directories is also removed.
         echo -e "${F_755}\n${D_755}" | sudo awk 'BEGIN{E=0}{
           if(length(buff " " $0) > 130000) {
-            e=system("chmod 0755" buff)
+            e=system("chmod 00755" buff)
             E = E || e
             buff = ""
           }
           buff = buff " " $0
         } END {
           if(buff) {
-            e=system("chmod 0755" buff)
+            e=system("chmod 00755" buff)
             E = E || e
           }
           exit E
@@ -900,14 +902,14 @@ checkfileperms() {
         # sudo chmod 644 $F_644
         echo "$F_644" | sudo awk 'BEGIN{E=0}{
           if(length(buff " " $0) > 130000) {
-            e=system("chmod 0644" buff)
+            e=system("chmod 00644" buff)
             E = E || e
             buff = ""
           }
           buff = buff " " $0
         } END {
           if(buff) {
-            e=system("chmod 0644" buff)
+            e=system("chmod 00644" buff)
             E = E || e
           }
           exit E
@@ -934,8 +936,29 @@ checkfileperms() {
 
 # Warn elfs linked to /lib64/
 checklib64() {
-  echo -n "${BLUE}$SCRIPT: $F have any /lib64 dependencies? ${NORMAL}"
-  find . -exec sh -c 'ldd {} 2>/dev/null | grep -q "/lib64/" && echo "File {} is linked to /lib64"' \;
+  echo -n "${BLUE}$SCRIPT: $F has any /lib64 dependencies?${NORMAL}"
+
+  FOUND=false
+  for file in $(find . -type f); do
+    if ldd "$file" 2>/dev/null | grep -q "/lib64/"; then
+      if ! $FOUND; then
+        echo "${YELLOW}The following ELFs are linked to /lib64.${NORMAL}"
+        echo "The following ELFs are linked to /lib64." >> /tmp/submitqc/lib64linkerrors
+        FOUND=true
+      fi
+      echo "${YELLOW}$file is linked to /lib64.${NORMAL}"
+      echo "$file is linked to /lib64." >> /tmp/submitqc/lib64linkerrors
+    fi
+  done
+
+  if $FOUND; then
+    echo "${RED}Compiled ELFs are linked to /lib64.${NORMAL}"
+    echo "${RED}Please link to /lib or /usr/local/lib directories instead.${NORMAL}"
+    echo "Compiled ELFs are linked to /lib64." >> /tmp/submitqc/lib64linkerrors
+    echo "Please link to /lib or /usr/local/lib directories instead." >> /tmp/submitqc/lib64linkerrors
+  else
+    echo "${GREEN} None.${NORMAL}"
+  fi
 }
 
 # check binaries have been stripped
@@ -1098,18 +1121,21 @@ Making new ${F}.list ... ${NORMAL}"
 # list all libs included in $1 and deps, fill INCLOG
 getinclibs() {
 
-  # skip if we've already checked this file. Note if we haven't.
-  echo $CHECKLIST | grep -q " $1" && return
-    # echo -e "\nskip $1 re-check" && return # avoid re-checking already checked
-  CHECKLIST="$CHECKLIST $1"
+  # Substitute -KERNEL variable.
+  dependent_tcz="$(echo $1 | sed "s/KERNEL/$KVER/")"
 
-  # if $1 exists
-  if [ -e $1 ]; then
-    EXT="$1"
-  elif [ -e $REPO/$1 ]; then
-    EXT="$REPO/$1"
+  # skip if we've already checked this file. Note if we haven't.
+  echo $CHECKLIST | grep -q " $dependent_tcz" && return
+    # echo -e "\nskip $dependent_tcz re-check" && return # avoid re-checking already checked
+  CHECKLIST="$CHECKLIST $dependent_tcz"
+
+  # if $dependent_tcz exists
+  if [ -e $dependent_tcz ]; then
+    EXT="$dependent_tcz"
+  elif [ -e $REPO/$dependent_tcz ]; then
+    EXT="$REPO/$dependent_tcz"
   else
-    echo -e "\n\tWARNING: dependency $1 missing - tests will be inconclusive."
+    echo -e "\n\tWARNING: dependency $dependent_tcz missing - tests will be inconclusive."
     LIBTESTERROR=1
     return 1
   fi
